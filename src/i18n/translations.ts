@@ -13,7 +13,6 @@ export const translations = {
       support: 'پشتیبانی',
       feedback: 'پیشنهادها',
       contact: 'تماس با ما',
-      admin: 'پنل مدیریت',
       langSwitch: 'EN',
     },
     hero: {
@@ -56,13 +55,12 @@ export const translations = {
       viewAllReleases: 'همه محصولات',
       emptyReleasesTitle: 'هنوز محصولی از سرور منتشر نشده است',
       emptyReleasesDesc:
-        'برای رعایت صداقت با کاربران، هیچ عنوان فرضی یا آزمایشی نمایش داده نمی‌شود. پس از ثبت اولین بازی یا اپلیکیشن در پنل مدیریت، فهرست محصولات به‌صورت خودکار اینجا منتشر می‌شود.',
-      goToAdmin: 'ورود به پنل مدیریت',
+        'برای رعایت صداقت با کاربران، هیچ عنوان فرضی یا آزمایشی نمایش داده نمی‌شود. به‌محض انتشار اولین بازی یا اپلیکیشن، فهرست محصولات به‌صورت خودکار اینجا منتشر می‌شود.',
       newsTitle: 'آخرین اخبار و اطلاعیه‌ها',
       newsSubtitle: 'گزارش‌های رسمی توسعه، انتشار نسخه‌های جدید و برنامه‌های پیش‌رو',
       viewAllNews: 'آرشیو اخبار',
       emptyNewsTitle: 'هنوز اطلاعیه‌ای ثبت نشده است',
-      emptyNewsDesc: 'اخبار و یادداشت‌های رسمی توسعه پس از انتشار در پنل مدیریت نمایش داده می‌شوند.',
+      emptyNewsDesc: 'اخبار و یادداشت‌های رسمی توسعه به‌محض انتشار در این بخش نمایش داده می‌شوند.',
       communityTitle: 'ارتباط مستقیم با تیم TAK1',
       communityDesc:
         'برای دریافت پشتیبانی فنی، پیگیری تیکت، ارسال ایده بازی یا همکاری با استودیو می‌توانید مستقیماً با ما در ارتباط باشید.',
@@ -112,7 +110,7 @@ export const translations = {
       rosterTitle: 'اعضای رسمی استودیو',
       emptyTitle: 'پروفایل اعضای تیم هنوز در سرور ثبت نشده است',
       emptyDesc:
-        'اطلاعات اعضای تیم از دیتابیس رسمی استودیو خوانده می‌شود و مدیر می‌تواند پروفایل اعضا را از پنل مدیریت اضافه کند.',
+        'اطلاعات اعضای رسمی استودیوی TAK1 به‌زودی در این بخش منتشر خواهد شد.',
       disciplinesTitle: 'حوزه‌های تخصصی استودیو',
       disciplines: [
         {
@@ -135,7 +133,7 @@ export const translations = {
       readMore: 'مطالعه کامل خبر',
       close: 'بستن',
       emptyTitle: 'خبری برای نمایش وجود ندارد',
-      emptyDesc: 'پس از انتشار اولین اطلاعیه در پنل مدیریت، اخبار استودیو اینجا قرار می‌گیرند.',
+      emptyDesc: 'به‌محض انتشار اولین اطلاعیه رسمی، اخبار استودیو اینجا قرار می‌گیرند.',
       categories: {
         release: 'انتشار جدید',
         studio: 'استودیو',
@@ -185,7 +183,7 @@ export const translations = {
       detailsLabel: 'توضیحات کامل',
       submit: 'ثبت پیشنهاد',
       submitting: 'در حال ارسال...',
-      successMsg: 'سپاسگزاریم! پیشنهاد شما در سامانه TAK1 ثبت شد و در پنل مدیریت بررسی خواهد شد.',
+      successMsg: 'سپاسگزاریم! پیشنهاد شما در سامانه TAK1 ثبت شد و توسط تیم استودیو بررسی خواهد شد.',
     },
     contact: {
       title: 'تماس با استودیوی TAK1',
@@ -204,12 +202,12 @@ export const translations = {
       successMsg: 'پیام شما با موفقیت به دفتر استودیوی TAK1 ارسال شد.',
     },
     admin: {
-      title: 'پنل مدیریت مستقل TAK1',
+      title: 'داشبورد استودیو TAK1',
       subtitle: 'مدیریت کامل محصولات، اخبار، تیم، تیکت‌های پشتیبانی و پیشنهادهای کاربران',
       setupTitle: 'ایجاد حساب مدیر استودیو (راه‌اندازی اولیه)',
       setupDesc:
-        'هیچ حساب مدیری در دیتابیس تعریف نشده است. ایمیل و رمز عبور امن خود را برای محافظت از پنل مدیریت ثبت کنید.',
-      loginTitle: 'ورود امن به پنل مدیریت',
+        'هیچ حساب مدیری در دیتابیس تعریف نشده است. ایمیل و رمز عبور امن خود را برای دسترسی مدیریتی ثبت کنید.',
+      loginTitle: 'ورود امن مدیر استودیو',
       email: 'ایمیل مدیر',
       password: 'رمز عبور',
       loginBtn: 'ورود به پنل',
@@ -231,7 +229,7 @@ export const translations = {
     footer: {
       tagline: 'توسعه مستقل بازی‌های ویدئویی و نرم‌افزارهای تخصصی با استانداردهای مهندسی مدرن.',
       pagesHeading: 'صفحات استودیو',
-      communityHeading: 'ارتباط و مدیریت',
+      communityHeading: 'ارتباط و پشتیبانی',
       copyright: '© ۲۰۲۶ TAK1 Game Studio (kalametgame.ir). تمامی حقوق محفوظ است.',
     },
   },
@@ -247,7 +245,6 @@ export const translations = {
       support: 'Support',
       feedback: 'Feedback',
       contact: 'Contact',
-      admin: 'Admin',
       langSwitch: 'فا',
     },
     hero: {
@@ -290,13 +287,12 @@ export const translations = {
       viewAllReleases: 'All Products',
       emptyReleasesTitle: 'No published titles in the catalog yet',
       emptyReleasesDesc:
-        'We never display fabricated games or placeholder downloads as real studio releases. Once you add your first product in the Admin Panel, it will appear here automatically.',
-      goToAdmin: 'Open Admin Console',
+        'We never display fabricated games or placeholder downloads as real studio releases. Published titles will appear here automatically.',
       newsTitle: 'Latest News & Dispatches',
       newsSubtitle: 'Official development notes, release announcements, and studio updates',
       viewAllNews: 'All News',
       emptyNewsTitle: 'No announcements published yet',
-      emptyNewsDesc: 'Studio dispatches and release notes appear here as soon as they are published from the Admin Panel.',
+      emptyNewsDesc: 'Studio dispatches and release notes appear here as soon as they are published.',
       communityTitle: 'Connect Directly with TAK1',
       communityDesc:
         'Reach our engineering and support desk for technical assistance, ticket tracking, feature ideas, or publishing inquiries.',
@@ -345,7 +341,7 @@ export const translations = {
       rosterTitle: 'Studio Roster',
       emptyTitle: 'No team profiles published yet',
       emptyDesc:
-        'Team member profiles are loaded directly from the studio database and can be managed through the Admin Panel.',
+        'Team member profiles are loaded directly from the studio database and will appear here once published.',
       disciplinesTitle: 'Core Studio Disciplines',
       disciplines: [
         {
@@ -368,7 +364,7 @@ export const translations = {
       readMore: 'Read Full Dispatch',
       close: 'Close',
       emptyTitle: 'No announcements yet',
-      emptyDesc: 'Official studio updates will appear here once published from the Admin Panel.',
+      emptyDesc: 'Official studio updates will appear here once published.',
       categories: {
         release: 'Release',
         studio: 'Studio',
@@ -437,7 +433,7 @@ export const translations = {
       successMsg: 'Your message has been delivered to TAK1 Game Studio.',
     },
     admin: {
-      title: 'TAK1 Studio Admin Console',
+      title: 'TAK1 Studio Workspace',
       subtitle: 'Manage products, store links, news dispatches, team roster, support tickets, and user feedback',
       setupTitle: 'Initialize Studio Administrator Account',
       setupDesc:
@@ -464,7 +460,7 @@ export const translations = {
     footer: {
       tagline: 'Independent game development and precision software studio built for modern platforms.',
       pagesHeading: 'Studio Pages',
-      communityHeading: 'Community & Console',
+      communityHeading: 'Community & Support',
       copyright: '© 2026 TAK1 Game Studio (kalametgame.ir). All rights reserved.',
     },
   },

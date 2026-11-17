@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Newspaper, ShieldCheck, X } from 'lucide-react';
+import { Newspaper, X } from 'lucide-react';
 import { useStudio } from '../context/StudioContext';
 import type { NewsPost } from '../types/studio';
 import { SafeMedia } from '../components/SafeMedia';
 
 export function NewsPage() {
-  const { lang, t, news, loadingData, navigate } = useStudio();
+  const { lang, t, news, loadingData } = useStudio();
   const isRtl = lang === 'fa';
   const [selectedPost, setSelectedPost] = useState<NewsPost | null>(null);
 
@@ -31,14 +31,6 @@ export function NewsPage() {
           </div>
           <h2 className="text-lg font-bold text-white">{t.news.emptyTitle}</h2>
           <p className="max-w-lg mx-auto text-sm text-slate-400">{t.news.emptyDesc}</p>
-          <button
-            type="button"
-            onClick={() => navigate('/admin')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[#D4AF37]/40 bg-[#D4AF37]/10 text-[#F2CF66] text-xs font-medium hover:bg-[#D4AF37]/20 cursor-pointer"
-          >
-            <ShieldCheck className="h-4 w-4" />
-            <span>{t.homeSections.goToAdmin}</span>
-          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">

@@ -1,9 +1,9 @@
-import { ShieldCheck, Users } from 'lucide-react';
+import { Users } from 'lucide-react';
 import { useStudio } from '../context/StudioContext';
 import { SafeMedia } from '../components/SafeMedia';
 
 export function TeamPage() {
-  const { lang, t, team, loadingData, navigate } = useStudio();
+  const { lang, t, team, loadingData } = useStudio();
   const isRtl = lang === 'fa';
 
   return (
@@ -56,24 +56,14 @@ export function TeamPage() {
             ))}
           </div>
         ) : team.length === 0 ? (
-          <div className="surface-card rounded-xl p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
-            <div className="flex items-start gap-4">
-              <div className="h-12 w-12 rounded-xl border border-white/10 bg-white/5 flex items-center justify-center text-[#D4AF37] shrink-0">
-                <Users className="h-5 w-5" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-base font-semibold text-white">{t.team.emptyTitle}</h3>
-                <p className="text-sm text-slate-400">{t.team.emptyDesc}</p>
-              </div>
+          <div className="surface-card rounded-xl p-8 flex items-start gap-4">
+            <div className="h-12 w-12 rounded-xl border border-white/10 bg-white/5 flex items-center justify-center text-[#D4AF37] shrink-0">
+              <Users className="h-5 w-5" />
             </div>
-            <button
-              type="button"
-              onClick={() => navigate('/admin')}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[#D4AF37]/40 bg-[#D4AF37]/10 text-[#F2CF66] text-xs font-medium hover:bg-[#D4AF37]/20 whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <ShieldCheck className="h-4 w-4" />
-              <span>{t.homeSections.goToAdmin}</span>
-            </button>
+            <div className="space-y-1">
+              <h3 className="text-base font-semibold text-white">{t.team.emptyTitle}</h3>
+              <p className="text-sm text-slate-400">{t.team.emptyDesc}</p>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
