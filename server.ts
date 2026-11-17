@@ -1,17 +1,48 @@
 import 'dotenv/config';
 import path from 'node:path';
 import fs from 'node:fs';
-import express from 'express';
+import express, { type Response } from 'express';
 import { createServer as createViteServer } from 'vite';
-import { repo } from './server/db.ts';
+import { HttpError, repo, toSafeHttpError } from './server/db.ts';
 import {
   clearAdminSessionCookie,
-  getAdminFromRequest,
-  hashPassword,
   requireAdmin,
+  requireAdminRole,
+  resolveAdminFromRequest,
   setAdminSessionCookie,
-  verifyPassword,
+  type AuthenticatedAdminRequest,
 } from './server/auth.ts';
+import type { AdminRole } from './src/types/studio.ts';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function sanitizeOptionalUrl(raw: unknown): string | undefined {
+  const val = String(raw ?? '').trim();
+  if (!val) return undefined;
+  if (/^https?:\/\/.+/i.test(val) || val.startsWith('/')) {
+    return val;
+  }
+  throw new HttpError(400, 'Links must start with http://, https://, or /', 'INVALID_URL');
+}
+
+function sanitizeMediaUrl(raw: unknown): string {
+  const val = String(raw ?? '').trim();
+  if (!val) return '';
+  if (
+    /^https?:\/\/.+/i.test(val) ||
+    val.startsWith('/') ||
+    /^data:image\/(?:png|jpeg|jpg|webp|gif|svg\+xml);base64,/i.test(val)
+  ) {
+    return val;
+  }
+  throw new HttpError(400, 'Invalid media URL.', 'INVALID_MEDIA_URL');
+}
+
+function sendError(res: Response, err: unknown): void {
+  const safe = toSafeHttpError(err);
+  res.status(safe.status).json({ error: safe.message, code: safe.code });
+}
 
 async function startServer() {
   const app = express();
@@ -20,24 +51,36 @@ async function startServer() {
   app.set('trust proxy', 1);
   app.use(express.json({ limit: '10mb' }));
 
-  // ---- Health ----
-  app.get('/api/health', (_req, res) => {
+  // ---- Health & Real Supabase Connection Status ----
+  app.get('/api/health', async (_req, res) => {
+    const supabaseStatus = await repo.checkSupabaseStatus();
     res.json({
       ok: true,
       brand: 'TAK1 Game Studio',
       domain: 'kalametgame.ir',
       storageMode: repo.storageMode,
+      supabaseStatus,
       timestamp: new Date().toISOString(),
     });
   });
 
-  // ---- Public Catalog, News & Team ----
+  // ---- Public Site Settings ----
+  app.get('/api/settings', async (_req, res) => {
+    try {
+      const settings = await repo.getSiteSettings();
+      res.json({ settings });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // ---- Public Catalog, News & Team (Published Only) ----
   app.get('/api/products', async (_req, res) => {
     try {
       const items = await repo.listProducts(false);
       res.json({ items });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
@@ -50,56 +93,82 @@ async function startServer() {
       }
       res.json({ item });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
   app.get('/api/news', async (_req, res) => {
     try {
-      const items = await repo.listNews();
+      const items = await repo.listNews(false);
       res.json({ items });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
   app.get('/api/team', async (_req, res) => {
     try {
-      const items = await repo.listTeam();
+      const items = await repo.listTeam(false);
       res.json({ items });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
-  // ---- Public Submissions (Support, Suggestions, Contact) ----
+  // ---- Public Submissions (Insert-Only + Tracking Lookup by Exact Code) ----
   app.post('/api/support', async (req, res) => {
     try {
-      const { name, email, productName, subject, message } = req.body ?? {};
-      if (!name?.trim() || !email?.trim() || !subject?.trim() || !message?.trim()) {
+      const { name, email, productId, productName, subject, message } = req.body ?? {};
+      const cleanName = String(name ?? '').trim();
+      const cleanEmail = String(email ?? '').trim().toLowerCase();
+      const cleanSubject = String(subject ?? '').trim();
+      const cleanMessage = String(message ?? '').trim();
+
+      if (!cleanName || !cleanEmail || !cleanSubject || !cleanMessage) {
         res.status(400).json({ error: 'All required fields must be filled.' });
         return;
       }
+      if (!EMAIL_RE.test(cleanEmail)) {
+        res.status(400).json({ error: 'Please provide a valid email address.' });
+        return;
+      }
+
+      const cleanProductId =
+        typeof productId === 'string' && UUID_RE.test(productId.trim()) ? productId.trim() : null;
+
       const ticket = await repo.createTicket({
-        name: String(name).trim(),
-        email: String(email).trim(),
-        productName: String(productName ?? '').trim(),
-        subject: String(subject).trim(),
-        message: String(message).trim(),
+        name: cleanName.slice(0, 120),
+        email: cleanEmail.slice(0, 160),
+        productId: cleanProductId,
+        productName: String(productName ?? '').trim().slice(0, 160),
+        subject: cleanSubject.slice(0, 200),
+        message: cleanMessage.slice(0, 4000),
       });
-      res.status(201).json({ ticket });
+      res.status(201).json({
+        ticket: {
+          trackingCode: ticket.trackingCode,
+          status: ticket.status,
+          createdAt: ticket.createdAt,
+        },
+      });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
   app.get('/api/support/track/:code', async (req, res) => {
     try {
-      const ticket = await repo.findTicketByTrackingCode(req.params.code);
+      const code = String(req.params.code ?? '').trim().toUpperCase();
+      if (!/^TAK1-[A-Z0-9]{4,12}$/.test(code)) {
+        res.status(400).json({ error: 'Invalid tracking code format.' });
+        return;
+      }
+      const ticket = await repo.findTicketByTrackingCode(code);
       if (!ticket) {
         res.status(404).json({ error: 'Ticket not found' });
         return;
       }
+      // Return only non-PII status & reply fields
       res.json({
         ticket: {
           trackingCode: ticket.trackingCode,
@@ -112,84 +181,154 @@ async function startServer() {
         },
       });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
   app.post('/api/suggestions', async (req, res) => {
     try {
-      const { name, email, category, title, details } = req.body ?? {};
-      if (!name?.trim() || !title?.trim() || !details?.trim()) {
+      const { name, email, category, productId, title, details } = req.body ?? {};
+      const cleanName = String(name ?? '').trim();
+      const cleanEmail = String(email ?? '').trim().toLowerCase();
+      const cleanTitle = String(title ?? '').trim();
+      const cleanDetails = String(details ?? '').trim();
+
+      if (!cleanName || !cleanTitle || !cleanDetails) {
         res.status(400).json({ error: 'Name, title, and details are required.' });
         return;
       }
+      if (cleanEmail && !EMAIL_RE.test(cleanEmail)) {
+        res.status(400).json({ error: 'Please provide a valid email address.' });
+        return;
+      }
+
       const allowedCats = ['feature', 'game_idea', 'improvement', 'other'];
+      const cleanProductId =
+        typeof productId === 'string' && UUID_RE.test(productId.trim()) ? productId.trim() : null;
+
       const suggestion = await repo.createSuggestion({
-        name: String(name).trim(),
-        email: String(email ?? '').trim(),
+        name: cleanName.slice(0, 120),
+        email: cleanEmail.slice(0, 160),
         category: allowedCats.includes(category) ? category : 'feature',
-        title: String(title).trim(),
-        details: String(details).trim(),
+        productId: cleanProductId,
+        title: cleanTitle.slice(0, 200),
+        details: cleanDetails.slice(0, 4000),
       });
-      res.status(201).json({ suggestion });
+      res.status(201).json({
+        suggestion: {
+          id: suggestion.id,
+          createdAt: suggestion.createdAt,
+        },
+      });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
   app.post('/api/contact', async (req, res) => {
     try {
       const { name, email, subject, message } = req.body ?? {};
-      if (!name?.trim() || !email?.trim() || !subject?.trim() || !message?.trim()) {
+      const cleanName = String(name ?? '').trim();
+      const cleanEmail = String(email ?? '').trim().toLowerCase();
+      const cleanSubject = String(subject ?? '').trim();
+      const cleanMessage = String(message ?? '').trim();
+
+      if (!cleanName || !cleanEmail || !cleanSubject || !cleanMessage) {
         res.status(400).json({ error: 'All contact fields are required.' });
         return;
       }
+      if (!EMAIL_RE.test(cleanEmail)) {
+        res.status(400).json({ error: 'Please provide a valid email address.' });
+        return;
+      }
+
       const item = await repo.createContactMessage({
-        name: String(name).trim(),
-        email: String(email).trim(),
-        subject: String(subject).trim(),
-        message: String(message).trim(),
+        name: cleanName.slice(0, 120),
+        email: cleanEmail.slice(0, 160),
+        subject: cleanSubject.slice(0, 200),
+        message: cleanMessage.slice(0, 4000),
       });
-      res.status(201).json({ message: item });
+      res.status(201).json({
+        message: {
+          id: item.id,
+          createdAt: item.createdAt,
+        },
+      });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
-  // ---- Admin Authentication ----
+  // ---- Admin Authentication (Supabase Auth + admin_users RBAC) ----
   app.get('/api/admin/session', async (req, res) => {
     try {
-      const session = getAdminFromRequest(req);
-      const hasAdmin = await repo.hasAnyAdmin();
+      const supabaseStatus = await repo.checkSupabaseStatus();
+      if (!supabaseStatus.configured || !supabaseStatus.connected || !supabaseStatus.schemaReady) {
+        res.json({
+          authenticated: false,
+          adminId: null,
+          adminEmail: null,
+          adminName: null,
+          adminRole: null,
+          needsSetup: false,
+          storageMode: repo.storageMode,
+          supabaseStatus,
+        });
+        return;
+      }
+
+      const [adminUser, hasAdmin] = await Promise.all([
+        resolveAdminFromRequest(req, res),
+        repo.hasAnyAdmin(),
+      ]);
+
       res.json({
-        authenticated: Boolean(session),
-        adminEmail: session?.email ?? null,
+        authenticated: Boolean(adminUser),
+        adminId: adminUser?.id ?? null,
+        adminEmail: adminUser?.email ?? null,
+        adminName: adminUser?.displayName ?? null,
+        adminRole: adminUser?.role ?? null,
         needsSetup: !hasAdmin,
         storageMode: repo.storageMode,
+        supabaseStatus,
       });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
   app.post('/api/admin/setup', async (req, res) => {
     try {
-      const hasAdmin = await repo.hasAnyAdmin();
-      if (hasAdmin) {
-        res.status(403).json({ error: 'Admin account is already configured.' });
+      const { email, password, displayName } = req.body ?? {};
+      const cleanEmail = String(email ?? '').trim().toLowerCase();
+      const rawPassword = String(password ?? '');
+      const cleanName = String(displayName ?? '').trim().slice(0, 100);
+
+      if (!EMAIL_RE.test(cleanEmail) || rawPassword.length < 8) {
+        res.status(400).json({ error: 'Valid email and password (min 8 characters) are required.' });
         return;
       }
-      const { email, password } = req.body ?? {};
-      if (!email?.trim() || !password || String(password).length < 8) {
-        res.status(400).json({ error: 'Valid email and password (min 8 chars) required.' });
-        return;
-      }
-      const passwordHash = hashPassword(String(password));
-      const created = await repo.createAdmin(String(email), passwordHash);
-      setAdminSessionCookie(req, res, created.email);
-      res.status(201).json({ authenticated: true, adminEmail: created.email });
+
+      const { admin, accessToken, refreshToken } = await repo.createInitialAdmin(
+        cleanEmail,
+        rawPassword,
+        cleanName,
+      );
+
+      setAdminSessionCookie(req, res, {
+        email: admin.email,
+        authUserId: admin.authUserId || '',
+        accessToken,
+        refreshToken,
+      });
+
+      res.status(201).json({
+        authenticated: true,
+        adminEmail: admin.email,
+        adminRole: admin.role,
+      });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
@@ -199,31 +338,30 @@ async function startServer() {
       const normalizedEmail = String(email ?? '').trim().toLowerCase();
       const rawPassword = String(password ?? '');
 
-      if (!normalizedEmail || !rawPassword) {
-        res.status(400).json({ error: 'Email and password are required.' });
+      if (!EMAIL_RE.test(normalizedEmail) || !rawPassword) {
+        res.status(400).json({ error: 'Valid email and password are required.' });
         return;
       }
 
-      // 1. Check env-configured admin credentials if set
-      const envEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-      const envPassword = process.env.ADMIN_PASSWORD;
-      if (envEmail && envPassword && normalizedEmail === envEmail && rawPassword === envPassword) {
-        setAdminSessionCookie(req, res, normalizedEmail);
-        res.json({ authenticated: true, adminEmail: normalizedEmail });
-        return;
-      }
+      const { admin, accessToken, refreshToken } = await repo.loginAdminWithSupabaseAuth(
+        normalizedEmail,
+        rawPassword,
+      );
 
-      // 2. Check database admin user
-      const record = await repo.findAdminByEmail(normalizedEmail);
-      if (record && verifyPassword(rawPassword, record.passwordHash)) {
-        setAdminSessionCookie(req, res, record.email);
-        res.json({ authenticated: true, adminEmail: record.email });
-        return;
-      }
+      setAdminSessionCookie(req, res, {
+        email: admin.email,
+        authUserId: admin.authUserId || '',
+        accessToken,
+        refreshToken,
+      });
 
-      res.status(401).json({ error: 'Invalid credentials.' });
+      res.json({
+        authenticated: true,
+        adminEmail: admin.email,
+        adminRole: admin.role,
+      });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
@@ -238,86 +376,123 @@ async function startServer() {
       const stats = await repo.getOverviewStats();
       res.json({ stats });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
+  // Media Upload to Supabase Storage
+  app.post('/api/admin/upload', requireAdmin, async (req, res) => {
+    try {
+      const { dataUrl, folder } = req.body ?? {};
+      if (typeof dataUrl !== 'string' || !dataUrl.trim()) {
+        res.status(400).json({ error: 'Image dataUrl is required.' });
+        return;
+      }
+      const result = await repo.uploadMediaToStorage(dataUrl, String(folder ?? 'products'));
+      res.status(201).json(result);
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // Admin Products
   app.get('/api/admin/products', requireAdmin, async (_req, res) => {
     try {
       const items = await repo.listProducts(true);
       res.json({ items });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
-  app.post('/api/admin/products', requireAdmin, async (req, res) => {
+  app.post('/api/admin/products', requireAdmin, async (req: AuthenticatedAdminRequest, res) => {
     try {
       const body = req.body ?? {};
-      if (!body.titleFa?.trim() && !body.titleEn?.trim()) {
+      if (!String(body.titleFa ?? '').trim() && !String(body.titleEn ?? '').trim()) {
         res.status(400).json({ error: 'Product title is required.' });
         return;
       }
-      const slugBase = String(body.slug || body.titleEn || body.titleFa || 'product')
-        .toLowerCase()
-        .replace(/[^a-z0-9-]+/g, '-')
-        .replace(/^-+|-+$/g, '') || `tak1-${Date.now()}`;
+      const slugBase =
+        String(body.slug || body.titleEn || body.titleFa || 'product')
+          .toLowerCase()
+          .replace(/[^a-z0-9-]+/g, '-')
+          .replace(/^-+|-+$/g, '') || `tak1-${Date.now()}`;
 
-      const item = await repo.createProduct({
-        slug: slugBase,
-        category: ['game', 'app', 'tool'].includes(body.category) ? body.category : 'game',
-        titleFa: String(body.titleFa ?? body.titleEn ?? '').trim(),
-        titleEn: String(body.titleEn ?? body.titleFa ?? '').trim(),
-        shortDescFa: String(body.shortDescFa ?? '').trim(),
-        shortDescEn: String(body.shortDescEn ?? '').trim(),
-        fullDescFa: String(body.fullDescFa ?? '').trim(),
-        fullDescEn: String(body.fullDescEn ?? '').trim(),
-        version: String(body.version ?? '1.0.0').trim(),
-        releaseDate: String(body.releaseDate ?? new Date().toISOString().slice(0, 10)),
-        iconUrl: String(body.iconUrl ?? '').trim(),
-        screenshots: Array.isArray(body.screenshots) ? body.screenshots.filter(Boolean) : [],
-        links: {
-          myket: String(body.links?.myket ?? '').trim() || undefined,
-          bazaar: String(body.links?.bazaar ?? '').trim() || undefined,
-          googlePlay: String(body.links?.googlePlay ?? '').trim() || undefined,
-          direct: String(body.links?.direct ?? '').trim() || undefined,
+      const screenshots = Array.isArray(body.screenshots)
+        ? body.screenshots.map(sanitizeMediaUrl).filter(Boolean)
+        : [];
+
+      const item = await repo.createProduct(
+        {
+          slug: slugBase,
+          category: ['game', 'app', 'tool'].includes(body.category) ? body.category : 'game',
+          titleFa: String(body.titleFa ?? body.titleEn ?? '').trim(),
+          titleEn: String(body.titleEn ?? body.titleFa ?? '').trim(),
+          shortDescFa: String(body.shortDescFa ?? '').trim(),
+          shortDescEn: String(body.shortDescEn ?? '').trim(),
+          fullDescFa: String(body.fullDescFa ?? '').trim(),
+          fullDescEn: String(body.fullDescEn ?? '').trim(),
+          version: String(body.version ?? '1.0.0').trim(),
+          releaseDate: String(body.releaseDate ?? new Date().toISOString().slice(0, 10)),
+          iconUrl: sanitizeMediaUrl(body.iconUrl),
+          screenshots,
+          links: {
+            myket: sanitizeOptionalUrl(body.links?.myket),
+            bazaar: sanitizeOptionalUrl(body.links?.bazaar),
+            googlePlay: sanitizeOptionalUrl(body.links?.googlePlay),
+            direct: sanitizeOptionalUrl(body.links?.direct),
+          },
+          featured: Boolean(body.featured),
+          published: body.published === undefined ? true : Boolean(body.published),
         },
-        featured: Boolean(body.featured),
-        published: body.published === undefined ? true : Boolean(body.published),
-      });
+        req.adminUser?.id,
+      );
       res.status(201).json({ item });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
   app.put('/api/admin/products/:id', requireAdmin, async (req, res) => {
     try {
       const body = req.body ?? {};
+      const links =
+        body.links !== undefined
+          ? {
+              myket: sanitizeOptionalUrl(body.links?.myket),
+              bazaar: sanitizeOptionalUrl(body.links?.bazaar),
+              googlePlay: sanitizeOptionalUrl(body.links?.googlePlay),
+              direct: sanitizeOptionalUrl(body.links?.direct),
+            }
+          : undefined;
+
       const item = await repo.updateProduct(req.params.id, {
-        slug: body.slug,
-        category: body.category,
-        titleFa: body.titleFa,
-        titleEn: body.titleEn,
-        shortDescFa: body.shortDescFa,
-        shortDescEn: body.shortDescEn,
-        fullDescFa: body.fullDescFa,
-        fullDescEn: body.fullDescEn,
-        version: body.version,
-        releaseDate: body.releaseDate,
-        iconUrl: body.iconUrl,
-        screenshots: Array.isArray(body.screenshots) ? body.screenshots.filter(Boolean) : undefined,
-        links: body.links,
-        featured: body.featured,
-        published: body.published,
+        slug: body.slug !== undefined ? String(body.slug).trim().toLowerCase() : undefined,
+        category: ['game', 'app', 'tool'].includes(body.category) ? body.category : undefined,
+        titleFa: body.titleFa !== undefined ? String(body.titleFa).trim() : undefined,
+        titleEn: body.titleEn !== undefined ? String(body.titleEn).trim() : undefined,
+        shortDescFa: body.shortDescFa !== undefined ? String(body.shortDescFa).trim() : undefined,
+        shortDescEn: body.shortDescEn !== undefined ? String(body.shortDescEn).trim() : undefined,
+        fullDescFa: body.fullDescFa !== undefined ? String(body.fullDescFa).trim() : undefined,
+        fullDescEn: body.fullDescEn !== undefined ? String(body.fullDescEn).trim() : undefined,
+        version: body.version !== undefined ? String(body.version).trim() : undefined,
+        releaseDate: body.releaseDate !== undefined ? String(body.releaseDate).trim() : undefined,
+        iconUrl: body.iconUrl !== undefined ? sanitizeMediaUrl(body.iconUrl) : undefined,
+        screenshots: Array.isArray(body.screenshots)
+          ? body.screenshots.map(sanitizeMediaUrl).filter(Boolean)
+          : undefined,
+        links,
+        featured: body.featured !== undefined ? Boolean(body.featured) : undefined,
+        published: body.published !== undefined ? Boolean(body.published) : undefined,
       });
+
       if (!item) {
         res.status(404).json({ error: 'Product not found' });
         return;
       }
       res.json({ item });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
@@ -326,45 +501,70 @@ async function startServer() {
       const ok = await repo.deleteProduct(req.params.id);
       res.json({ ok });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
-  // Admin News
-  app.post('/api/admin/news', requireAdmin, async (req, res) => {
+  // Admin News (includes drafts)
+  app.get('/api/admin/news', requireAdmin, async (_req, res) => {
+    try {
+      const items = await repo.listNews(true);
+      res.json({ items });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  app.post('/api/admin/news', requireAdmin, async (req: AuthenticatedAdminRequest, res) => {
     try {
       const b = req.body ?? {};
-      if (!b.titleFa?.trim() && !b.titleEn?.trim()) {
+      if (!String(b.titleFa ?? '').trim() && !String(b.titleEn ?? '').trim()) {
         res.status(400).json({ error: 'News title is required.' });
         return;
       }
-      const item = await repo.createNews({
-        titleFa: String(b.titleFa ?? b.titleEn ?? '').trim(),
-        titleEn: String(b.titleEn ?? b.titleFa ?? '').trim(),
-        summaryFa: String(b.summaryFa ?? '').trim(),
-        summaryEn: String(b.summaryEn ?? '').trim(),
-        contentFa: String(b.contentFa ?? '').trim(),
-        contentEn: String(b.contentEn ?? '').trim(),
-        coverUrl: String(b.coverUrl ?? '').trim(),
-        category: ['release', 'studio', 'update', 'event'].includes(b.category) ? b.category : 'studio',
-        publishedAt: String(b.publishedAt || new Date().toISOString()),
-      });
+      const item = await repo.createNews(
+        {
+          titleFa: String(b.titleFa ?? b.titleEn ?? '').trim(),
+          titleEn: String(b.titleEn ?? b.titleFa ?? '').trim(),
+          summaryFa: String(b.summaryFa ?? '').trim(),
+          summaryEn: String(b.summaryEn ?? '').trim(),
+          contentFa: String(b.contentFa ?? '').trim(),
+          contentEn: String(b.contentEn ?? '').trim(),
+          coverUrl: sanitizeMediaUrl(b.coverUrl),
+          category: ['release', 'studio', 'update', 'event'].includes(b.category) ? b.category : 'studio',
+          published: b.published === undefined ? true : Boolean(b.published),
+          publishedAt: String(b.publishedAt || new Date().toISOString()),
+        },
+        req.adminUser?.id,
+      );
       res.status(201).json({ item });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
   app.put('/api/admin/news/:id', requireAdmin, async (req, res) => {
     try {
-      const item = await repo.updateNews(req.params.id, req.body ?? {});
+      const b = req.body ?? {};
+      const item = await repo.updateNews(req.params.id, {
+        titleFa: b.titleFa !== undefined ? String(b.titleFa).trim() : undefined,
+        titleEn: b.titleEn !== undefined ? String(b.titleEn).trim() : undefined,
+        summaryFa: b.summaryFa !== undefined ? String(b.summaryFa).trim() : undefined,
+        summaryEn: b.summaryEn !== undefined ? String(b.summaryEn).trim() : undefined,
+        contentFa: b.contentFa !== undefined ? String(b.contentFa).trim() : undefined,
+        contentEn: b.contentEn !== undefined ? String(b.contentEn).trim() : undefined,
+        coverUrl: b.coverUrl !== undefined ? sanitizeMediaUrl(b.coverUrl) : undefined,
+        category: ['release', 'studio', 'update', 'event'].includes(b.category) ? b.category : undefined,
+        published: b.published !== undefined ? Boolean(b.published) : undefined,
+        publishedAt: b.publishedAt !== undefined ? String(b.publishedAt) : undefined,
+      });
       if (!item) {
         res.status(404).json({ error: 'News post not found' });
         return;
       }
       res.json({ item });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
@@ -373,15 +573,24 @@ async function startServer() {
       const ok = await repo.deleteNews(req.params.id);
       res.json({ ok });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
-  // Admin Team
+  // Admin Team (includes drafts)
+  app.get('/api/admin/team', requireAdmin, async (_req, res) => {
+    try {
+      const items = await repo.listTeam(true);
+      res.json({ items });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
   app.post('/api/admin/team', requireAdmin, async (req, res) => {
     try {
       const b = req.body ?? {};
-      if (!b.nameFa?.trim() && !b.nameEn?.trim()) {
+      if (!String(b.nameFa ?? '').trim() && !String(b.nameEn ?? '').trim()) {
         res.status(400).json({ error: 'Team member name is required.' });
         return;
       }
@@ -392,25 +601,37 @@ async function startServer() {
         roleEn: String(b.roleEn ?? b.roleFa ?? '').trim(),
         bioFa: String(b.bioFa ?? '').trim(),
         bioEn: String(b.bioEn ?? '').trim(),
-        avatarUrl: String(b.avatarUrl ?? '').trim(),
-        sortOrder: Number(b.sortOrder ?? 0),
+        avatarUrl: sanitizeMediaUrl(b.avatarUrl),
+        sortOrder: Number.isFinite(Number(b.sortOrder)) ? Number(b.sortOrder) : 0,
+        published: b.published === undefined ? true : Boolean(b.published),
       });
       res.status(201).json({ item });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
   app.put('/api/admin/team/:id', requireAdmin, async (req, res) => {
     try {
-      const item = await repo.updateTeamMember(req.params.id, req.body ?? {});
+      const b = req.body ?? {};
+      const item = await repo.updateTeamMember(req.params.id, {
+        nameFa: b.nameFa !== undefined ? String(b.nameFa).trim() : undefined,
+        nameEn: b.nameEn !== undefined ? String(b.nameEn).trim() : undefined,
+        roleFa: b.roleFa !== undefined ? String(b.roleFa).trim() : undefined,
+        roleEn: b.roleEn !== undefined ? String(b.roleEn).trim() : undefined,
+        bioFa: b.bioFa !== undefined ? String(b.bioFa).trim() : undefined,
+        bioEn: b.bioEn !== undefined ? String(b.bioEn).trim() : undefined,
+        avatarUrl: b.avatarUrl !== undefined ? sanitizeMediaUrl(b.avatarUrl) : undefined,
+        sortOrder: b.sortOrder !== undefined && Number.isFinite(Number(b.sortOrder)) ? Number(b.sortOrder) : undefined,
+        published: b.published !== undefined ? Boolean(b.published) : undefined,
+      });
       if (!item) {
         res.status(404).json({ error: 'Team member not found' });
         return;
       }
       res.json({ item });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
@@ -419,7 +640,7 @@ async function startServer() {
       const ok = await repo.deleteTeamMember(req.params.id);
       res.json({ ok });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
@@ -429,21 +650,29 @@ async function startServer() {
       const items = await repo.listTickets();
       res.json({ items });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
-  app.patch('/api/admin/tickets/:id', requireAdmin, async (req, res) => {
+  app.patch('/api/admin/tickets/:id', requireAdmin, async (req: AuthenticatedAdminRequest, res) => {
     try {
       const { status, adminReply } = req.body ?? {};
-      const item = await repo.updateTicket(req.params.id, { status, adminReply });
+      const cleanStatus = ['open', 'in_progress', 'resolved'].includes(status) ? status : undefined;
+      const item = await repo.updateTicket(
+        req.params.id,
+        {
+          status: cleanStatus,
+          adminReply: adminReply !== undefined ? String(adminReply).trim() : undefined,
+        },
+        req.adminUser?.id,
+      );
       if (!item) {
         res.status(404).json({ error: 'Ticket not found' });
         return;
       }
       res.json({ item });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
@@ -453,21 +682,29 @@ async function startServer() {
       const items = await repo.listSuggestions();
       res.json({ items });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
-  app.patch('/api/admin/suggestions/:id', requireAdmin, async (req, res) => {
+  app.patch('/api/admin/suggestions/:id', requireAdmin, async (req: AuthenticatedAdminRequest, res) => {
     try {
       const { status, adminNote } = req.body ?? {};
-      const item = await repo.updateSuggestion(req.params.id, { status, adminNote });
+      const cleanStatus = ['new', 'reviewed', 'planned', 'archived'].includes(status) ? status : undefined;
+      const item = await repo.updateSuggestion(
+        req.params.id,
+        {
+          status: cleanStatus,
+          adminNote: adminNote !== undefined ? String(adminNote).trim() : undefined,
+        },
+        req.adminUser?.id,
+      );
       if (!item) {
         res.status(404).json({ error: 'Suggestion not found' });
         return;
       }
       res.json({ item });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
@@ -476,7 +713,7 @@ async function startServer() {
       const ok = await repo.deleteSuggestion(req.params.id);
       res.json({ ok });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
@@ -486,7 +723,7 @@ async function startServer() {
       const items = await repo.listContactMessages();
       res.json({ items });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
@@ -500,7 +737,7 @@ async function startServer() {
       }
       res.json({ item });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
   });
 
@@ -509,8 +746,168 @@ async function startServer() {
       const ok = await repo.deleteContactMessage(req.params.id);
       res.json({ ok });
     } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
+      sendError(res, err);
     }
+  });
+
+  // Admin Site Settings
+  app.get('/api/admin/settings', requireAdmin, async (_req, res) => {
+    try {
+      const settings = await repo.getSiteSettings();
+      res.json({ settings });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  app.put(
+    '/api/admin/settings',
+    requireAdmin,
+    requireAdminRole(['super_admin', 'admin']),
+    async (req: AuthenticatedAdminRequest, res) => {
+      try {
+        const b = req.body ?? {};
+        const contactEmail = b.contactEmail !== undefined ? String(b.contactEmail).trim() : undefined;
+        if (contactEmail && !EMAIL_RE.test(contactEmail)) {
+          res.status(400).json({ error: 'Invalid contact email format.' });
+          return;
+        }
+        const settings = await repo.updateSiteSettings(
+          {
+            studioNameFa: b.studioNameFa !== undefined ? String(b.studioNameFa).trim() : undefined,
+            studioNameEn: b.studioNameEn !== undefined ? String(b.studioNameEn).trim() : undefined,
+            taglineFa: b.taglineFa !== undefined ? String(b.taglineFa).trim() : undefined,
+            taglineEn: b.taglineEn !== undefined ? String(b.taglineEn).trim() : undefined,
+            contactEmail,
+            officialDomain: b.officialDomain !== undefined ? String(b.officialDomain).trim() : undefined,
+            maintenanceMode: b.maintenanceMode !== undefined ? Boolean(b.maintenanceMode) : undefined,
+            announcementFa: b.announcementFa !== undefined ? String(b.announcementFa).trim() : undefined,
+            announcementEn: b.announcementEn !== undefined ? String(b.announcementEn).trim() : undefined,
+            socialLinks:
+              b.socialLinks && typeof b.socialLinks === 'object'
+                ? {
+                    telegram: sanitizeOptionalUrl(b.socialLinks.telegram),
+                    instagram: sanitizeOptionalUrl(b.socialLinks.instagram),
+                    discord: sanitizeOptionalUrl(b.socialLinks.discord),
+                    github: sanitizeOptionalUrl(b.socialLinks.github),
+                    website: sanitizeOptionalUrl(b.socialLinks.website),
+                  }
+                : undefined,
+          },
+          req.adminUser?.id,
+        );
+        res.json({ settings });
+      } catch (err) {
+        sendError(res, err);
+      }
+    },
+  );
+
+  // Admin Users & Access Control
+  app.get(
+    '/api/admin/users',
+    requireAdmin,
+    requireAdminRole(['super_admin', 'admin']),
+    async (_req, res) => {
+      try {
+        const items = await repo.listAdminUsers();
+        res.json({ items });
+      } catch (err) {
+        sendError(res, err);
+      }
+    },
+  );
+
+  app.post(
+    '/api/admin/users',
+    requireAdmin,
+    requireAdminRole(['super_admin', 'admin']),
+    async (req: AuthenticatedAdminRequest, res) => {
+      try {
+        const { email, password, displayName, role } = req.body ?? {};
+        const cleanEmail = String(email ?? '').trim().toLowerCase();
+        const rawPassword = String(password ?? '');
+        const cleanRole: AdminRole = ['super_admin', 'admin', 'editor'].includes(role)
+          ? role
+          : 'editor';
+
+        if (!EMAIL_RE.test(cleanEmail) || rawPassword.length < 8) {
+          res.status(400).json({ error: 'Valid email and password (min 8 chars) are required.' });
+          return;
+        }
+        if (cleanRole === 'super_admin' && req.adminUser?.role !== 'super_admin') {
+          res.status(403).json({ error: 'Only super_admin can create another super_admin.' });
+          return;
+        }
+
+        const item = await repo.createAdditionalAdmin({
+          email: cleanEmail,
+          password: rawPassword,
+          displayName: String(displayName ?? '').trim(),
+          role: cleanRole,
+        });
+        res.status(201).json({ item });
+      } catch (err) {
+        sendError(res, err);
+      }
+    },
+  );
+
+  app.patch(
+    '/api/admin/users/:id',
+    requireAdmin,
+    requireAdminRole(['super_admin', 'admin']),
+    async (req: AuthenticatedAdminRequest, res) => {
+      try {
+        if (req.params.id === req.adminUser?.id && req.body?.isActive === false) {
+          res.status(400).json({ error: 'You cannot deactivate your own admin account.' });
+          return;
+        }
+        const role = ['super_admin', 'admin', 'editor'].includes(req.body?.role)
+          ? (req.body.role as AdminRole)
+          : undefined;
+        if (role === 'super_admin' && req.adminUser?.role !== 'super_admin') {
+          res.status(403).json({ error: 'Only super_admin can assign super_admin role.' });
+          return;
+        }
+        const item = await repo.updateAdminUser(req.params.id, {
+          role,
+          isActive: req.body?.isActive !== undefined ? Boolean(req.body.isActive) : undefined,
+          displayName:
+            req.body?.displayName !== undefined ? String(req.body.displayName).trim() : undefined,
+        });
+        if (!item) {
+          res.status(404).json({ error: 'Admin user not found' });
+          return;
+        }
+        res.json({ item });
+      } catch (err) {
+        sendError(res, err);
+      }
+    },
+  );
+
+  app.delete(
+    '/api/admin/users/:id',
+    requireAdmin,
+    requireAdminRole(['super_admin']),
+    async (req: AuthenticatedAdminRequest, res) => {
+      try {
+        if (req.params.id === req.adminUser?.id) {
+          res.status(400).json({ error: 'You cannot delete your own account.' });
+          return;
+        }
+        const ok = await repo.deleteAdminUser(req.params.id);
+        res.json({ ok });
+      } catch (err) {
+        sendError(res, err);
+      }
+    },
+  );
+
+  // Explicit 404 for unknown API paths
+  app.all('/api/*', (_req, res) => {
+    res.status(404).json({ error: 'API endpoint not found' });
   });
 
   // ---- Vite Dev Middleware or Production Dist ----

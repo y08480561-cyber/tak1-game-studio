@@ -1,10 +1,11 @@
 import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
+import { createSupabaseAuthClient, repo } from './db.ts';
+import type { AdminRole, AdminUser } from '../src/types/studio.ts';
 
 const COOKIE_NAME = 'tak1_admin_session';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 
-// Ephemeral fallback secret per process if SESSION_SECRET env is not set
 const FALLBACK_SECRET = crypto.randomBytes(32).toString('hex');
 
 function getSessionSecret(): string {
@@ -13,33 +14,24 @@ function getSessionSecret(): string {
     : FALLBACK_SECRET;
 }
 
-export function hashPassword(password: string): string {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const derived = crypto.scryptSync(password, salt, 64).toString('hex');
-  return `${salt}:${derived}`;
-}
-
-export function verifyPassword(password: string, storedHash: string): boolean {
-  const parts = storedHash.split(':');
-  if (parts.length !== 2) return false;
-  const [salt, keyHex] = parts;
-  const keyBuf = Buffer.from(keyHex, 'hex');
-  const derivedBuf = crypto.scryptSync(password, salt, 64);
-  if (keyBuf.length !== derivedBuf.length) return false;
-  return crypto.timingSafeEqual(keyBuf, derivedBuf);
-}
-
 export interface SessionPayload {
   email: string;
+  authUserId: string;
+  accessToken: string;
+  refreshToken: string;
   exp: number;
 }
 
-export function createSessionToken(email: string): string {
-  const payload: SessionPayload = {
-    email,
+export interface AuthenticatedAdminRequest extends Request {
+  adminUser?: AdminUser;
+}
+
+export function createSessionToken(payload: Omit<SessionPayload, 'exp'>): string {
+  const fullPayload: SessionPayload = {
+    ...payload,
     exp: Date.now() + SESSION_TTL_MS,
   };
-  const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  const encoded = Buffer.from(JSON.stringify(fullPayload), 'utf8').toString('base64url');
   const sig = crypto
     .createHmac('sha256', getSessionSecret())
     .update(encoded)
@@ -64,7 +56,12 @@ export function verifySessionToken(token: string): SessionPayload | null {
 
   try {
     const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as SessionPayload;
-    if (!parsed.email || typeof parsed.exp !== 'number' || parsed.exp < Date.now()) {
+    if (
+      !parsed.email ||
+      !parsed.accessToken ||
+      typeof parsed.exp !== 'number' ||
+      parsed.exp < Date.now()
+    ) {
       return null;
     }
     return parsed;
@@ -89,21 +86,18 @@ export function parseCookies(req: Request): Record<string, string> {
   return result;
 }
 
-export function getAdminFromRequest(req: Request): SessionPayload | null {
-  const cookies = parseCookies(req);
-  const token = cookies[COOKIE_NAME];
-  if (!token) return null;
-  return verifySessionToken(token);
-}
-
 function isHttpsRequest(req: Request): boolean {
   const proto = String(req.headers['x-forwarded-proto'] ?? '').toLowerCase();
   const origin = String(req.headers.origin ?? '').toLowerCase();
   return req.secure || proto.includes('https') || origin.startsWith('https://');
 }
 
-export function setAdminSessionCookie(req: Request, res: Response, email: string): void {
-  const token = createSessionToken(email);
+export function setAdminSessionCookie(
+  req: Request,
+  res: Response,
+  payload: Omit<SessionPayload, 'exp'>,
+): void {
+  const token = createSessionToken(payload);
   const secure = isHttpsRequest(req);
   const parts = [
     `${COOKIE_NAME}=${encodeURIComponent(token)}`,
@@ -129,12 +123,81 @@ export function clearAdminSessionCookie(req: Request, res: Response): void {
   res.setHeader('Set-Cookie', parts.join('; '));
 }
 
-export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  const session = getAdminFromRequest(req);
-  if (!session) {
-    res.status(401).json({ error: 'Unauthorized: Admin authentication required.' });
-    return;
+export async function resolveAdminFromRequest(
+  req: Request,
+  res?: Response,
+): Promise<AdminUser | null> {
+  if (repo.storageMode !== 'supabase') return null;
+
+  const cookies = parseCookies(req);
+  const token = cookies[COOKIE_NAME];
+  if (!token) return null;
+
+  const session = verifySessionToken(token);
+  if (!session) return null;
+
+  try {
+    const authClient = createSupabaseAuthClient();
+    const { data, error } = await authClient.auth.getUser(session.accessToken);
+    let activeUser = data?.user ?? null;
+
+    if ((error || !activeUser) && session.refreshToken) {
+      const { data: refreshed, error: refreshErr } = await authClient.auth.refreshSession({
+        refresh_token: session.refreshToken,
+      });
+      if (!refreshErr && refreshed.user && refreshed.session) {
+        activeUser = refreshed.user;
+        if (res) {
+          setAdminSessionCookie(req, res, {
+            email: activeUser.email || session.email,
+            authUserId: activeUser.id,
+            accessToken: refreshed.session.access_token,
+            refreshToken: refreshed.session.refresh_token,
+          });
+        }
+      }
+    }
+
+    if (!activeUser) return null;
+    return await repo.findActiveAdminByAuthOrEmail(activeUser.id, activeUser.email || session.email);
+  } catch {
+    return null;
   }
-  (req as Request & { adminEmail?: string }).adminEmail = session.email;
-  next();
+}
+
+export async function requireAdmin(
+  req: AuthenticatedAdminRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    if (repo.storageMode !== 'supabase') {
+      res.status(503).json({
+        error: 'Supabase is not configured on the server.',
+        code: 'SUPABASE_NOT_CONFIGURED',
+      });
+      return;
+    }
+
+    const admin = await resolveAdminFromRequest(req, res);
+    if (!admin) {
+      res.status(401).json({ error: 'Unauthorized: Valid studio admin session required.' });
+      return;
+    }
+
+    req.adminUser = admin;
+    next();
+  } catch {
+    res.status(401).json({ error: 'Unauthorized: Admin verification failed.' });
+  }
+}
+
+export function requireAdminRole(roles: AdminRole[]) {
+  return (req: AuthenticatedAdminRequest, res: Response, next: NextFunction): void => {
+    if (!req.adminUser || !roles.includes(req.adminUser.role)) {
+      res.status(403).json({ error: 'Forbidden: Insufficient administrator permissions.' });
+      return;
+    }
+    next();
+  };
 }

@@ -1,7 +1,13 @@
 import { useStudio } from '../context/StudioContext';
 
 export function Footer() {
-  const { navigate, t } = useStudio();
+  const { navigate, t, lang, siteSettings } = useStudio();
+  const isFa = lang === 'fa';
+  const studioTitle =
+    (isFa ? siteSettings?.studioNameFa : siteSettings?.studioNameEn) || 'TAK1 Game Studio';
+  const studioDomain = siteSettings?.officialDomain || 'kalametgame.ir';
+  const studioTagline =
+    (isFa ? siteSettings?.taglineFa : siteSettings?.taglineEn) || t.footer.tagline;
 
   const studioLinks = [
     { to: '/', label: t.nav.home },
@@ -28,12 +34,12 @@ export function Footer() {
                 className="h-12 w-12 rounded-xl object-cover border border-white/10"
               />
               <div>
-                <p className="font-display text-lg font-bold text-white">TAK1 Game Studio</p>
-                <p className="font-mono-tabular text-xs text-[#D4AF37]">kalametgame.ir</p>
+                <p className="font-display text-lg font-bold text-white">{studioTitle}</p>
+                <p className="font-mono-tabular text-xs text-[#D4AF37]">{studioDomain}</p>
               </div>
             </div>
             <p className="max-w-md text-sm leading-relaxed text-slate-400">
-              {t.footer.tagline}
+              {studioTagline}
             </p>
           </div>
 

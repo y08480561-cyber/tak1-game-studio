@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { translations } from '../i18n/translations';
-import type { Language, NewsPost, Product, TeamMember } from '../types/studio';
+import type { Language, NewsPost, Product, SiteSettings, SupabaseStatus, TeamMember } from '../types/studio';
 
 interface StudioContextValue {
   lang: Language;
@@ -12,9 +12,11 @@ interface StudioContextValue {
   products: Product[];
   news: NewsPost[];
   team: TeamMember[];
+  siteSettings: SiteSettings | null;
   loadingData: boolean;
   dataError: string | null;
-  storageMode: 'supabase' | 'local' | null;
+  storageMode: 'supabase' | 'unconfigured' | null;
+  supabaseStatus: SupabaseStatus | null;
   refreshPublicData: () => Promise<void>;
 }
 
@@ -34,9 +36,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [news, setNews] = useState<NewsPost[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
+  const [siteSettings, setSiteSettings] = useState<SiteSettings | null>(null);
   const [loadingData, setLoadingData] = useState<boolean>(true);
   const [dataError, setDataError] = useState<string | null>(null);
-  const [storageMode, setStorageMode] = useState<'supabase' | 'local' | null>(null);
+  const [storageMode, setStorageMode] = useState<'supabase' | 'unconfigured' | null>(null);
+  const [supabaseStatus, setSupabaseStatus] = useState<SupabaseStatus | null>(null);
 
   const setLang = useCallback((next: Language) => {
     setLangState(next);
@@ -78,28 +82,40 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     setLoadingData(true);
     setDataError(null);
     try {
-      const [healthRes, prodRes, newsRes, teamRes] = await Promise.all([
+      const [healthRes, prodRes, newsRes, teamRes, settingsRes] = await Promise.all([
         fetch('/api/health'),
         fetch('/api/products'),
         fetch('/api/news'),
         fetch('/api/team'),
+        fetch('/api/settings'),
       ]);
 
-      if (!prodRes.ok || !newsRes.ok || !teamRes.ok) {
-        throw new Error('Server returned an error while loading studio data.');
+      const healthJson = healthRes.ok ? await healthRes.json() : null;
+      if (healthJson) {
+        setStorageMode(healthJson.storageMode ?? null);
+        setSupabaseStatus(healthJson.supabaseStatus ?? null);
       }
 
-      const [healthJson, prodJson, newsJson, teamJson] = await Promise.all([
-        healthRes.ok ? healthRes.json() : Promise.resolve({ storageMode: null }),
+      if (!prodRes.ok || !newsRes.ok || !teamRes.ok) {
+        const errPayload = await (prodRes.ok ? newsRes : prodRes).json().catch(() => null);
+        setProducts([]);
+        setNews([]);
+        setTeam([]);
+        setSiteSettings(null);
+        throw new Error(errPayload?.error || 'Unable to load studio data from database.');
+      }
+
+      const [prodJson, newsJson, teamJson, settingsJson] = await Promise.all([
         prodRes.json(),
         newsRes.json(),
         teamRes.json(),
+        settingsRes.ok ? settingsRes.json() : Promise.resolve({ settings: null }),
       ]);
 
-      setStorageMode(healthJson.storageMode ?? null);
       setProducts(Array.isArray(prodJson.items) ? prodJson.items : []);
       setNews(Array.isArray(newsJson.items) ? newsJson.items : []);
       setTeam(Array.isArray(teamJson.items) ? teamJson.items : []);
+      setSiteSettings(settingsJson?.settings ?? null);
     } catch (err) {
       setDataError((err as Error).message || 'Connection failed');
     } finally {
@@ -123,9 +139,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         products,
         news,
         team,
+        siteSettings,
         loadingData,
         dataError,
         storageMode,
+        supabaseStatus,
         refreshPublicData,
       }}
     >

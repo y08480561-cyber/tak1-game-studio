@@ -3,7 +3,7 @@ import { CheckCircle2, Globe, Mail, Clock } from 'lucide-react';
 import { useStudio } from '../context/StudioContext';
 
 export function ContactPage() {
-  const { t, navigate } = useStudio();
+  const { t, navigate, siteSettings } = useStudio();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [subject, setSubject] = useState('');
@@ -79,7 +79,7 @@ export function ContactPage() {
             <div>
               <p className="text-xs text-slate-400">{t.contact.officialDomain}</p>
               <p className="font-mono-tabular text-base font-semibold text-white">
-                kalametgame.ir
+                {siteSettings?.officialDomain || 'kalametgame.ir'}
               </p>
             </div>
           </div>
@@ -89,7 +89,7 @@ export function ContactPage() {
             <div>
               <p className="text-xs text-slate-400">{t.contact.studioEmail}</p>
               <p className="font-mono-tabular text-base font-semibold text-white">
-                contact@kalametgame.ir
+                {siteSettings?.contactEmail || 'contact@kalametgame.ir'}
               </p>
             </div>
           </div>

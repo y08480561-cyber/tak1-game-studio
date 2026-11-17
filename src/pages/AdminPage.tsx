@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import {
+  AlertTriangle,
   BarChart3,
   Check,
   Database,
+  Eye,
+  EyeOff,
   Gamepad2,
+  Globe,
   Inbox,
   LifeBuoy,
   LogOut,
@@ -11,19 +15,25 @@ import {
   Newspaper,
   Pencil,
   Plus,
+  Search,
+  Settings,
   ShieldCheck,
   Trash2,
   Upload,
+  UserCog,
   Users,
 } from 'lucide-react';
 import { useStudio } from '../context/StudioContext';
 import type {
   AdminOverviewStats,
+  AdminRole,
   AdminSessionStatus,
+  AdminUser,
   ContactMessage,
   NewsPost,
   Product,
   ProductCategory,
+  SiteSettings,
   Suggestion,
   SuggestionStatus,
   SupportTicket,
@@ -32,13 +42,22 @@ import type {
 } from '../types/studio';
 import { SafeMedia } from '../components/SafeMedia';
 
-type AdminTab = 'overview' | 'products' | 'news' | 'team' | 'tickets' | 'suggestions' | 'messages';
+type AdminTab =
+  | 'overview'
+  | 'products'
+  | 'news'
+  | 'team'
+  | 'tickets'
+  | 'suggestions'
+  | 'messages'
+  | 'settings'
+  | 'admins';
 
 async function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.onerror = () => reject(new Error('Failed to read image file'));
     reader.readAsDataURL(file);
   });
 }
@@ -51,6 +70,7 @@ export function AdminPage() {
   const [loadingSession, setLoadingSession] = useState(true);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [authDisplayName, setAuthDisplayName] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
@@ -62,7 +82,32 @@ export function AdminPage() {
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [messages, setMessages] = useState<ContactMessage[]>([]);
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [siteSettings, setSiteSettings] = useState<SiteSettings | null>(null);
+
   const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  const [uploadingField, setUploadingField] = useState<string | null>(null);
+
+  // Search & Filter states across tabs
+  const [prodQuery, setProdQuery] = useState('');
+  const [prodCatFilter, setProdCatFilter] = useState<'all' | ProductCategory>('all');
+  const [prodPubFilter, setProdPubFilter] = useState<'all' | 'published' | 'draft'>('all');
+
+  const [newsQuery, setNewsQuery] = useState('');
+  const [newsPubFilter, setNewsPubFilter] = useState<'all' | 'published' | 'draft'>('all');
+
+  const [teamQuery, setTeamQuery] = useState('');
+  const [teamPubFilter, setTeamPubFilter] = useState<'all' | 'published' | 'draft'>('all');
+
+  const [ticketQuery, setTicketQuery] = useState('');
+  const [ticketStatusFilter, setTicketStatusFilter] = useState<'all' | TicketStatus>('all');
+
+  const [sugQuery, setSugQuery] = useState('');
+  const [sugStatusFilter, setSugStatusFilter] = useState<'all' | SuggestionStatus>('all');
+
+  const [msgQuery, setMsgQuery] = useState('');
+  const [msgReadFilter, setMsgReadFilter] = useState<'all' | 'unread' | 'read'>('all');
 
   // Product Form State
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
@@ -96,6 +141,7 @@ export function AdminPage() {
   const [nContentFa, setNContentFa] = useState('');
   const [nContentEn, setNContentEn] = useState('');
   const [nCoverUrl, setNCoverUrl] = useState('');
+  const [nPublished, setNPublished] = useState(true);
 
   // Team Form State
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
@@ -107,14 +153,42 @@ export function AdminPage() {
   const [mBioEn, setMBioEn] = useState('');
   const [mAvatarUrl, setMAvatarUrl] = useState('');
   const [mSortOrder, setMSortOrder] = useState(0);
+  const [mPublished, setMPublished] = useState(true);
 
-  // Ticket Reply Drafts
+  // Ticket & Suggestion Drafts
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [suggestionNotes, setSuggestionNotes] = useState<Record<string, string>>({});
 
+  // Site Settings Form State
+  const [sNameFa, setSNameFa] = useState('');
+  const [sNameEn, setSNameEn] = useState('');
+  const [sTaglineFa, setSTaglineFa] = useState('');
+  const [sTaglineEn, setSTaglineEn] = useState('');
+  const [sEmail, setSEmail] = useState('');
+  const [sDomain, setSDomain] = useState('');
+  const [sAnnFa, setSAnnFa] = useState('');
+  const [sAnnEn, setSAnnEn] = useState('');
+  const [sMaint, setSMaint] = useState(false);
+  const [sTelegram, setSTelegram] = useState('');
+  const [sInstagram, setSInstagram] = useState('');
+  const [sDiscord, setSDiscord] = useState('');
+  const [sGithub, setSGithub] = useState('');
+
+  // New Admin Form State
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [newAdminName, setNewAdminName] = useState('');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [newAdminRole, setNewAdminRole] = useState<AdminRole>('editor');
+
   const flash = (msg: string) => {
+    setErrorBanner(null);
     setFeedbackBanner(msg);
-    setTimeout(() => setFeedbackBanner(null), 3500);
+    setTimeout(() => setFeedbackBanner(null), 4000);
+  };
+
+  const flashError = (msg: string) => {
+    setFeedbackBanner(null);
+    setErrorBanner(msg);
   };
 
   const loadSession = useCallback(async () => {
@@ -132,15 +206,25 @@ export function AdminPage() {
 
   const loadAdminData = useCallback(async () => {
     try {
-      const [ovRes, prodRes, newsRes, teamRes, tickRes, sugRes, msgRes] = await Promise.all([
+      const requests: Promise<Response>[] = [
         fetch('/api/admin/overview'),
         fetch('/api/admin/products'),
-        fetch('/api/news'),
-        fetch('/api/team'),
+        fetch('/api/admin/news'),
+        fetch('/api/admin/team'),
         fetch('/api/admin/tickets'),
         fetch('/api/admin/suggestions'),
         fetch('/api/admin/messages'),
-      ]);
+        fetch('/api/admin/settings'),
+      ];
+
+      const canManageAdmins =
+        session?.adminRole === 'super_admin' || session?.adminRole === 'admin';
+      if (canManageAdmins) {
+        requests.push(fetch('/api/admin/users'));
+      }
+
+      const [ovRes, prodRes, newsRes, teamRes, tickRes, sugRes, msgRes, setRes, usersRes] =
+        await Promise.all(requests);
 
       if (ovRes.ok) setOverview((await ovRes.json()).stats);
       if (prodRes.ok) setAdminProducts((await prodRes.json()).items ?? []);
@@ -161,10 +245,30 @@ export function AdminPage() {
         setSuggestionNotes(notes);
       }
       if (msgRes.ok) setMessages((await msgRes.json()).items ?? []);
+      if (setRes.ok) {
+        const s = (await setRes.json()).settings as SiteSettings;
+        setSiteSettings(s);
+        setSNameFa(s.studioNameFa);
+        setSNameEn(s.studioNameEn);
+        setSTaglineFa(s.taglineFa);
+        setSTaglineEn(s.taglineEn);
+        setSEmail(s.contactEmail);
+        setSDomain(s.officialDomain);
+        setSAnnFa(s.announcementFa);
+        setSAnnEn(s.announcementEn);
+        setSMaint(s.maintenanceMode);
+        setSTelegram(s.socialLinks?.telegram ?? '');
+        setSInstagram(s.socialLinks?.instagram ?? '');
+        setSDiscord(s.socialLinks?.discord ?? '');
+        setSGithub(s.socialLinks?.github ?? '');
+      }
+      if (usersRes && usersRes.ok) {
+        setAdminUsers((await usersRes.json()).items ?? []);
+      }
     } catch {
-      // ignore transient load failures
+      flashError(isFa ? 'خطا در دریافت اطلاعات از سرور' : 'Failed to load studio workspace data');
     }
-  }, []);
+  }, [isFa, session?.adminRole]);
 
   useEffect(() => {
     void loadSession();
@@ -185,7 +289,11 @@ export function AdminPage() {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: authEmail, password: authPassword }),
+        body: JSON.stringify({
+          email: authEmail,
+          password: authPassword,
+          displayName: authDisplayName,
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Authentication failed');
@@ -203,6 +311,64 @@ export function AdminPage() {
     await loadSession();
   };
 
+  // ---- Supabase Storage Upload Helper ----
+  const uploadToSupabaseStorage = async (
+    file: File,
+    folder: string,
+    fieldKey: string,
+  ): Promise<string | null> => {
+    setUploadingField(fieldKey);
+    setErrorBanner(null);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const res = await fetch('/api/admin/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl, folder }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Upload failed');
+      return String(json.url);
+    } catch (err) {
+      flashError((err as Error).message);
+      return null;
+    } finally {
+      setUploadingField(null);
+    }
+  };
+
+  const handleUploadSingle = async (
+    e: ChangeEvent<HTMLInputElement>,
+    folder: string,
+    fieldKey: string,
+    setter: (val: string) => void,
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const url = await uploadToSupabaseStorage(file, folder, fieldKey);
+    if (url) {
+      setter(url);
+      flash(isFa ? 'تصویر با موفقیت در Supabase Storage بارگذاری شد.' : 'Image uploaded to Supabase Storage.');
+    }
+  };
+
+  const handleUploadScreenshot = async (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (files.length === 0) return;
+    const uploaded: string[] = [];
+    for (const file of files) {
+      const url = await uploadToSupabaseStorage(file, 'screenshots', 'screenshots');
+      if (url) uploaded.push(url);
+    }
+    if (uploaded.length > 0) {
+      setPScreenshots((prev) => [...prev, ...uploaded]);
+      flash(isFa ? 'تصاویر گالری در Supabase ذخیره شدند.' : 'Screenshots uploaded to Supabase Storage.');
+    }
+  };
+
+  // ---- Products CRUD ----
   const resetProductForm = () => {
     setEditingProductId(null);
     setPTitleFa('');
@@ -273,9 +439,7 @@ export function AdminPage() {
       published: pPublished,
     };
 
-    const url = editingProductId
-      ? `/api/admin/products/${editingProductId}`
-      : '/api/admin/products';
+    const url = editingProductId ? `/api/admin/products/${editingProductId}` : '/api/admin/products';
     const method = editingProductId ? 'PUT' : 'POST';
 
     const res = await fetch(url, {
@@ -283,19 +447,62 @@ export function AdminPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (res.ok) {
-      resetProductForm();
-      await Promise.all([loadAdminData(), refreshPublicData()]);
-      flash(isFa ? 'محصول با موفقیت ذخیره شد.' : 'Product saved successfully.');
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      flashError(json.error || 'Failed to save product');
+      return;
     }
+    resetProductForm();
+    await Promise.all([loadAdminData(), refreshPublicData()]);
+    flash(isFa ? 'محصول با موفقیت در Supabase ذخیره شد.' : 'Product saved to Supabase.');
+  };
+
+  const handleToggleProductPublish = async (p: Product) => {
+    const res = await fetch(`/api/admin/products/${p.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ published: !p.published }),
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      flashError(json.error || 'Update failed');
+      return;
+    }
+    await Promise.all([loadAdminData(), refreshPublicData()]);
+    flash(
+      !p.published
+        ? isFa
+          ? 'محصول منتشر شد.'
+          : 'Product published.'
+        : isFa
+          ? 'محصول به پیش‌نویس منتقل شد.'
+          : 'Product moved to draft.',
+    );
   };
 
   const handleDeleteProduct = async (id: string) => {
     const res = await fetch(`/api/admin/products/${id}`, { method: 'DELETE' });
-    if (res.ok) {
-      await Promise.all([loadAdminData(), refreshPublicData()]);
-      flash(isFa ? 'محصول حذف شد.' : 'Product deleted.');
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      flashError(json.error || 'Delete failed');
+      return;
     }
+    await Promise.all([loadAdminData(), refreshPublicData()]);
+    flash(isFa ? 'محصول حذف شد.' : 'Product deleted.');
+  };
+
+  // ---- News CRUD ----
+  const resetNewsForm = () => {
+    setEditingNewsId(null);
+    setNTitleFa('');
+    setNTitleEn('');
+    setNCategory('studio');
+    setNSummaryFa('');
+    setNSummaryEn('');
+    setNContentFa('');
+    setNContentEn('');
+    setNCoverUrl('');
+    setNPublished(true);
   };
 
   const handleNewsSubmit = async (e: FormEvent) => {
@@ -309,6 +516,7 @@ export function AdminPage() {
       contentFa: nContentFa,
       contentEn: nContentEn,
       coverUrl: nCoverUrl,
+      published: nPublished,
     };
     const url = editingNewsId ? `/api/admin/news/${editingNewsId}` : '/api/admin/news';
     const method = editingNewsId ? 'PUT' : 'POST';
@@ -317,26 +525,60 @@ export function AdminPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (res.ok) {
-      setEditingNewsId(null);
-      setNTitleFa('');
-      setNTitleEn('');
-      setNSummaryFa('');
-      setNSummaryEn('');
-      setNContentFa('');
-      setNContentEn('');
-      setNCoverUrl('');
-      await Promise.all([loadAdminData(), refreshPublicData()]);
-      flash(isFa ? 'خبر منتشر شد.' : 'News dispatch saved.');
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      flashError(json.error || 'Failed to save news');
+      return;
     }
+    resetNewsForm();
+    await Promise.all([loadAdminData(), refreshPublicData()]);
+    flash(isFa ? 'خبر در Supabase ذخیره شد.' : 'News dispatch saved.');
+  };
+
+  const handleToggleNewsPublish = async (post: NewsPost) => {
+    const res = await fetch(`/api/admin/news/${post.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ published: !post.published }),
+    });
+    if (!res.ok) {
+      flashError('Failed to update news status');
+      return;
+    }
+    await Promise.all([loadAdminData(), refreshPublicData()]);
+    flash(
+      !post.published
+        ? isFa
+          ? 'خبر منتشر شد.'
+          : 'News published.'
+        : isFa
+          ? 'خبر پیش‌نویس شد.'
+          : 'News set to draft.',
+    );
   };
 
   const handleDeleteNews = async (id: string) => {
     const res = await fetch(`/api/admin/news/${id}`, { method: 'DELETE' });
-    if (res.ok) {
-      await Promise.all([loadAdminData(), refreshPublicData()]);
-      flash(isFa ? 'خبر حذف شد.' : 'News deleted.');
+    if (!res.ok) {
+      flashError('Failed to delete news');
+      return;
     }
+    await Promise.all([loadAdminData(), refreshPublicData()]);
+    flash(isFa ? 'خبر حذف شد.' : 'News deleted.');
+  };
+
+  // ---- Team CRUD ----
+  const resetTeamForm = () => {
+    setEditingTeamId(null);
+    setMNameFa('');
+    setMNameEn('');
+    setMRoleFa('');
+    setMRoleEn('');
+    setMBioFa('');
+    setMBioEn('');
+    setMAvatarUrl('');
+    setMSortOrder(0);
+    setMPublished(true);
   };
 
   const handleTeamSubmit = async (e: FormEvent) => {
@@ -350,6 +592,7 @@ export function AdminPage() {
       bioEn: mBioEn,
       avatarUrl: mAvatarUrl,
       sortOrder: mSortOrder,
+      published: mPublished,
     };
     const url = editingTeamId ? `/api/admin/team/${editingTeamId}` : '/api/admin/team';
     const method = editingTeamId ? 'PUT' : 'POST';
@@ -358,39 +601,61 @@ export function AdminPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (res.ok) {
-      setEditingTeamId(null);
-      setMNameFa('');
-      setMNameEn('');
-      setMRoleFa('');
-      setMRoleEn('');
-      setMBioFa('');
-      setMBioEn('');
-      setMAvatarUrl('');
-      setMSortOrder(0);
-      await Promise.all([loadAdminData(), refreshPublicData()]);
-      flash(isFa ? 'اطلاعات عضو تیم ذخیره شد.' : 'Team member saved.');
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      flashError(json.error || 'Failed to save team member');
+      return;
     }
+    resetTeamForm();
+    await Promise.all([loadAdminData(), refreshPublicData()]);
+    flash(isFa ? 'اطلاعات عضو تیم ذخیره شد.' : 'Team member saved.');
+  };
+
+  const handleToggleTeamPublish = async (member: TeamMember) => {
+    const res = await fetch(`/api/admin/team/${member.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ published: !member.published }),
+    });
+    if (!res.ok) {
+      flashError('Failed to update member visibility');
+      return;
+    }
+    await Promise.all([loadAdminData(), refreshPublicData()]);
+    flash(
+      !member.published
+        ? isFa
+          ? 'عضو تیم در سایت منتشر شد.'
+          : 'Team member published.'
+        : isFa
+          ? 'عضو تیم پیش‌نویس شد.'
+          : 'Team member hidden as draft.',
+    );
   };
 
   const handleDeleteTeam = async (id: string) => {
     const res = await fetch(`/api/admin/team/${id}`, { method: 'DELETE' });
-    if (res.ok) {
-      await Promise.all([loadAdminData(), refreshPublicData()]);
-      flash(isFa ? 'عضو تیم حذف شد.' : 'Team member removed.');
+    if (!res.ok) {
+      flashError('Failed to delete team member');
+      return;
     }
+    await Promise.all([loadAdminData(), refreshPublicData()]);
+    flash(isFa ? 'عضو تیم حذف شد.' : 'Team member removed.');
   };
 
+  // ---- Tickets / Suggestions / Messages ----
   const handleTicketUpdate = async (id: string, status: TicketStatus) => {
     const res = await fetch(`/api/admin/tickets/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status, adminReply: replyDrafts[id] ?? '' }),
     });
-    if (res.ok) {
-      await loadAdminData();
-      flash(isFa ? 'پاسخ تیکت ثبت شد.' : 'Support ticket updated.');
+    if (!res.ok) {
+      flashError('Failed to update support ticket');
+      return;
     }
+    await loadAdminData();
+    flash(isFa ? 'پاسخ تیکت در Supabase ثبت شد.' : 'Support ticket updated.');
   };
 
   const handleSuggestionUpdate = async (id: string, status: SuggestionStatus) => {
@@ -399,10 +664,12 @@ export function AdminPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status, adminNote: suggestionNotes[id] ?? '' }),
     });
-    if (res.ok) {
-      await loadAdminData();
-      flash(isFa ? 'وضعیت پیشنهاد به‌روزرسانی شد.' : 'Suggestion updated.');
+    if (!res.ok) {
+      flashError('Failed to update suggestion');
+      return;
     }
+    await loadAdminData();
+    flash(isFa ? 'وضعیت پیشنهاد به‌روزرسانی شد.' : 'Suggestion updated.');
   };
 
   const handleDeleteSuggestion = async (id: string) => {
@@ -424,22 +691,185 @@ export function AdminPage() {
     if (res.ok) await loadAdminData();
   };
 
-  const handleUploadSingle = async (
-    e: ChangeEvent<HTMLInputElement>,
-    setter: (val: string) => void,
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const dataUrl = await fileToDataUrl(file);
-    setter(dataUrl);
+  // ---- Site Settings ----
+  const handleSaveSettings = async (e: FormEvent) => {
+    e.preventDefault();
+    const res = await fetch('/api/admin/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        studioNameFa: sNameFa,
+        studioNameEn: sNameEn,
+        taglineFa: sTaglineFa,
+        taglineEn: sTaglineEn,
+        contactEmail: sEmail,
+        officialDomain: sDomain,
+        announcementFa: sAnnFa,
+        announcementEn: sAnnEn,
+        maintenanceMode: sMaint,
+        socialLinks: {
+          telegram: sTelegram || undefined,
+          instagram: sInstagram || undefined,
+          discord: sDiscord || undefined,
+          github: sGithub || undefined,
+        },
+      }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      flashError(json.error || 'Failed to save site settings');
+      return;
+    }
+    await Promise.all([loadAdminData(), refreshPublicData()]);
+    flash(isFa ? 'تنظیمات عمومی سایت ذخیره شد.' : 'Site settings updated.');
   };
 
-  const handleUploadScreenshot = async (e: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (files.length === 0) return;
-    const urls = await Promise.all(files.map(fileToDataUrl));
-    setPScreenshots((prev) => [...prev, ...urls]);
+  // ---- Admin Users ----
+  const handleCreateAdminUser = async (e: FormEvent) => {
+    e.preventDefault();
+    const res = await fetch('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: newAdminEmail,
+        displayName: newAdminName,
+        password: newAdminPassword,
+        role: newAdminRole,
+      }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      flashError(json.error || 'Failed to create admin user');
+      return;
+    }
+    setNewAdminEmail('');
+    setNewAdminName('');
+    setNewAdminPassword('');
+    setNewAdminRole('editor');
+    await loadAdminData();
+    flash(isFa ? 'مدیر جدید در Supabase Auth ایجاد شد.' : 'Admin account created.');
   };
+
+  const handleToggleAdminActive = async (u: AdminUser) => {
+    const res = await fetch(`/api/admin/users/${u.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isActive: !u.isActive }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      flashError(json.error || 'Failed to update admin status');
+      return;
+    }
+    await loadAdminData();
+  };
+
+  const handleChangeAdminRole = async (u: AdminUser, role: AdminRole) => {
+    const res = await fetch(`/api/admin/users/${u.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      flashError(json.error || 'Failed to change role');
+      return;
+    }
+    await loadAdminData();
+    flash(isFa ? 'سطح دسترسی مدیر تغییر یافت.' : 'Admin role updated.');
+  };
+
+  const handleDeleteAdminUser = async (id: string) => {
+    const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      flashError(json.error || 'Failed to delete admin');
+      return;
+    }
+    await loadAdminData();
+  };
+
+  // ---- Filtered Collections ----
+  const filteredProducts = useMemo(() => {
+    const q = prodQuery.trim().toLowerCase();
+    return adminProducts.filter((p) => {
+      if (prodCatFilter !== 'all' && p.category !== prodCatFilter) return false;
+      if (prodPubFilter === 'published' && !p.published) return false;
+      if (prodPubFilter === 'draft' && p.published) return false;
+      if (!q) return true;
+      return (
+        p.titleFa.toLowerCase().includes(q) ||
+        p.titleEn.toLowerCase().includes(q) ||
+        p.slug.toLowerCase().includes(q)
+      );
+    });
+  }, [adminProducts, prodQuery, prodCatFilter, prodPubFilter]);
+
+  const filteredNews = useMemo(() => {
+    const q = newsQuery.trim().toLowerCase();
+    return adminNews.filter((n) => {
+      if (newsPubFilter === 'published' && !n.published) return false;
+      if (newsPubFilter === 'draft' && n.published) return false;
+      if (!q) return true;
+      return n.titleFa.toLowerCase().includes(q) || n.titleEn.toLowerCase().includes(q);
+    });
+  }, [adminNews, newsQuery, newsPubFilter]);
+
+  const filteredTeam = useMemo(() => {
+    const q = teamQuery.trim().toLowerCase();
+    return adminTeam.filter((m) => {
+      if (teamPubFilter === 'published' && !m.published) return false;
+      if (teamPubFilter === 'draft' && m.published) return false;
+      if (!q) return true;
+      return (
+        m.nameFa.toLowerCase().includes(q) ||
+        m.nameEn.toLowerCase().includes(q) ||
+        m.roleFa.toLowerCase().includes(q) ||
+        m.roleEn.toLowerCase().includes(q)
+      );
+    });
+  }, [adminTeam, teamQuery, teamPubFilter]);
+
+  const filteredTickets = useMemo(() => {
+    const q = ticketQuery.trim().toLowerCase();
+    return tickets.filter((tk) => {
+      if (ticketStatusFilter !== 'all' && tk.status !== ticketStatusFilter) return false;
+      if (!q) return true;
+      return (
+        tk.trackingCode.toLowerCase().includes(q) ||
+        tk.name.toLowerCase().includes(q) ||
+        tk.email.toLowerCase().includes(q) ||
+        tk.subject.toLowerCase().includes(q)
+      );
+    });
+  }, [tickets, ticketQuery, ticketStatusFilter]);
+
+  const filteredSuggestions = useMemo(() => {
+    const q = sugQuery.trim().toLowerCase();
+    return suggestions.filter((s) => {
+      if (sugStatusFilter !== 'all' && s.status !== sugStatusFilter) return false;
+      if (!q) return true;
+      return (
+        s.title.toLowerCase().includes(q) ||
+        s.name.toLowerCase().includes(q) ||
+        s.details.toLowerCase().includes(q)
+      );
+    });
+  }, [suggestions, sugQuery, sugStatusFilter]);
+
+  const filteredMessages = useMemo(() => {
+    const q = msgQuery.trim().toLowerCase();
+    return messages.filter((m) => {
+      if (msgReadFilter === 'unread' && m.read) return false;
+      if (msgReadFilter === 'read' && !m.read) return false;
+      if (!q) return true;
+      return (
+        m.name.toLowerCase().includes(q) ||
+        m.email.toLowerCase().includes(q) ||
+        m.subject.toLowerCase().includes(q)
+      );
+    });
+  }, [messages, msgQuery, msgReadFilter]);
 
   if (loadingSession) {
     return (
@@ -449,76 +879,164 @@ export function AdminPage() {
     );
   }
 
-  // ---- Authentication / Setup Screen ----
+  // ---- Diagnostic Screen when Supabase is Unconfigured or Schema Missing ----
+  const sbStatus = session?.supabaseStatus;
   if (!session?.authenticated) {
+    const supabaseBlocked =
+      !sbStatus?.configured || !sbStatus?.connected || !sbStatus?.schemaReady;
+
     return (
-      <div className="mx-auto max-w-md px-4 py-20">
-        <form
-          onSubmit={handleAuthSubmit}
-          className="surface-card rounded-2xl p-6 sm:p-8 space-y-5"
-        >
-          <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-xl border border-[#D4AF37]/40 bg-[#D4AF37]/10 flex items-center justify-center text-[#F2CF66]">
-              <ShieldCheck className="h-5 w-5" />
+      <div className="mx-auto max-w-lg px-4 py-20 space-y-6">
+        {supabaseBlocked ? (
+          <div className="surface-card rounded-2xl p-6 sm:p-8 space-y-4 border border-amber-500/40">
+            <div className="flex items-center gap-3">
+              <div className="h-11 w-11 rounded-xl border border-amber-500/40 bg-amber-500/10 flex items-center justify-center text-amber-300 shrink-0">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-white">
+                  {isFa ? 'وضعیت اتصال Supabase' : 'Supabase Connection Status'}
+                </h1>
+                <p className="text-xs text-slate-400">TAK1 Game Studio · kalametgame.ir</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-white">
-                {session?.needsSetup ? t.admin.setupTitle : t.admin.loginTitle}
-              </h1>
-              <p className="text-xs text-slate-400">TAK1 Game Studio · kalametgame.ir</p>
+
+            <div className="rounded-xl border border-white/10 bg-[#070709] p-4 space-y-2 text-xs leading-relaxed text-slate-300">
+              {!sbStatus?.configured ? (
+                <>
+                  <p className="font-semibold text-amber-300">
+                    {isFa
+                      ? 'متغیرهای محیطی Supabase روی سرور تنظیم نشده‌اند.'
+                      : 'Supabase environment variables are missing on the server.'}
+                  </p>
+                  <p>
+                    {isFa
+                      ? 'لطفاً در تنظیمات Environment سرویس Render مقادیر زیر را اضافه کنید (هرگز آن‌ها را در Frontend یا GitHub قرار ندهید):'
+                      : 'Add the following variables in Render Environment settings (never expose them in Frontend or GitHub):'}
+                  </p>
+                  <ul className="font-mono-tabular text-[#E5C158] list-disc list-inside space-y-1 pt-1">
+                    {(sbStatus?.missingVars ?? ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']).map(
+                      (v) => (
+                        <li key={v}>{v}</li>
+                      ),
+                    )}
+                  </ul>
+                </>
+              ) : !sbStatus.connected ? (
+                <>
+                  <p className="font-semibold text-red-300">
+                    {isFa ? 'اتصال به سرور Supabase برقرار نشد.' : 'Unable to connect to Supabase.'}
+                  </p>
+                  <p>{sbStatus.error}</p>
+                </>
+              ) : (
+                <>
+                  <p className="font-semibold text-amber-300">
+                    {isFa
+                      ? 'اتصال به Supabase برقرار است، اما جداول پایگاه داده هنوز ساخته نشده‌اند.'
+                      : 'Connected to Supabase, but database schema tables are missing.'}
+                  </p>
+                  <p>
+                    {isFa
+                      ? 'فایل supabase/schema.sql را در Supabase SQL Editor اجرا کنید و سپس صفحه را بازنشانی نمایید.'
+                      : 'Execute supabase/schema.sql in your Supabase SQL Editor and refresh this page.'}
+                  </p>
+                </>
+              )}
             </div>
+
+            <button
+              type="button"
+              onClick={() => void loadSession()}
+              className="w-full py-2.5 rounded-xl border border-white/15 bg-white/5 text-xs font-semibold text-white hover:border-[#D4AF37]/50 cursor-pointer"
+            >
+              {isFa ? 'بررسی مجدد اتصال Supabase' : 'Re-check Supabase Connection'}
+            </button>
           </div>
-
-          {session?.needsSetup ? (
-            <p className="text-xs leading-relaxed text-slate-300">{t.admin.setupDesc}</p>
-          ) : (
-            <p className="text-xs leading-relaxed text-slate-400">
-              {isFa
-                ? 'با ایمیل و رمز عبوری که در راه‌اندازی اولیه ثبت کرده‌اید (یا مقادیر ADMIN_EMAIL و ADMIN_PASSWORD در تنظیمات سرور) وارد شوید.'
-                : 'Sign in with the administrator email and password registered during initial setup (or server ADMIN_EMAIL / ADMIN_PASSWORD).'}
-            </p>
-          )}
-
-          {authError && (
-            <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-200">
-              {authError}
-            </div>
-          )}
-
-          <label className="block space-y-1.5 text-xs text-slate-300">
-            <span>{t.admin.email}</span>
-            <input
-              required
-              type="email"
-              value={authEmail}
-              onChange={(e) => setAuthEmail(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-[#070709] px-3.5 py-2.5 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
-            />
-          </label>
-
-          <label className="block space-y-1.5 text-xs text-slate-300">
-            <span>{t.admin.password}</span>
-            <input
-              required
-              minLength={8}
-              type="password"
-              value={authPassword}
-              onChange={(e) => setAuthPassword(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-[#070709] px-3.5 py-2.5 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
-            />
-          </label>
-
-          <button
-            type="submit"
-            disabled={authSubmitting}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-sm font-semibold hover:brightness-110 transition cursor-pointer"
+        ) : (
+          <form
+            onSubmit={handleAuthSubmit}
+            className="surface-card rounded-2xl p-6 sm:p-8 space-y-5"
           >
-            {session?.needsSetup ? t.admin.setupBtn : t.admin.loginBtn}
-          </button>
-        </form>
+            <div className="flex items-center gap-3">
+              <div className="h-11 w-11 rounded-xl border border-[#D4AF37]/40 bg-[#D4AF37]/10 flex items-center justify-center text-[#F2CF66]">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-white">
+                  {session?.needsSetup ? t.admin.setupTitle : t.admin.loginTitle}
+                </h1>
+                <p className="text-xs text-slate-400">TAK1 Game Studio · kalametgame.ir</p>
+              </div>
+            </div>
+
+            {session?.needsSetup ? (
+              <p className="text-xs leading-relaxed text-slate-300">{t.admin.setupDesc}</p>
+            ) : (
+              <p className="text-xs leading-relaxed text-slate-400">
+                {isFa
+                  ? 'احراز هویت به‌صورت مستقیم از طریق Supabase Auth و جدول سطوح دسترسی انجام می‌شود.'
+                  : 'Authenticated directly via Supabase Auth and verified against studio admin roles.'}
+              </p>
+            )}
+
+            {authError && (
+              <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-200">
+                {authError}
+              </div>
+            )}
+
+            {session?.needsSetup && (
+              <label className="block space-y-1.5 text-xs text-slate-300">
+                <span>{isFa ? 'نام نمایشی مدیر' : 'Administrator Name'}</span>
+                <input
+                  type="text"
+                  value={authDisplayName}
+                  onChange={(e) => setAuthDisplayName(e.target.value)}
+                  placeholder="TAK1 Studio Owner"
+                  className="w-full rounded-xl border border-white/10 bg-[#070709] px-3.5 py-2.5 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
+                />
+              </label>
+            )}
+
+            <label className="block space-y-1.5 text-xs text-slate-300">
+              <span>{t.admin.email}</span>
+              <input
+                required
+                type="email"
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3.5 py-2.5 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+
+            <label className="block space-y-1.5 text-xs text-slate-300">
+              <span>{t.admin.password}</span>
+              <input
+                required
+                minLength={8}
+                type="password"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3.5 py-2.5 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+
+            <button
+              type="submit"
+              disabled={authSubmitting}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-sm font-semibold hover:brightness-110 transition cursor-pointer"
+            >
+              {session?.needsSetup ? t.admin.setupBtn : t.admin.loginBtn}
+            </button>
+          </form>
+        )}
       </div>
     );
   }
+
+  const canManageAdminSettings =
+    session.adminRole === 'super_admin' || session.adminRole === 'admin';
 
   const tabs: { id: AdminTab; label: string; icon: typeof BarChart3 }[] = [
     { id: 'overview', label: t.admin.tabs.overview, icon: BarChart3 },
@@ -528,6 +1046,12 @@ export function AdminPage() {
     { id: 'tickets', label: t.admin.tabs.tickets, icon: LifeBuoy },
     { id: 'suggestions', label: t.admin.tabs.suggestions, icon: MessageSquarePlus },
     { id: 'messages', label: t.admin.tabs.messages, icon: Inbox },
+    ...(canManageAdminSettings
+      ? [
+          { id: 'settings' as AdminTab, label: t.admin.tabs.settings, icon: Settings },
+          { id: 'admins' as AdminTab, label: t.admin.tabs.admins, icon: UserCog },
+        ]
+      : []),
   ];
 
   return (
@@ -540,12 +1064,20 @@ export function AdminPage() {
           </h1>
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
             <span className="font-mono-tabular text-[#D4AF37]">{session.adminEmail}</span>
+            {session.adminRole && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="font-mono-tabular uppercase text-slate-300">
+                  {session.adminRole}
+                </span>
+              </>
+            )}
             <span aria-hidden="true">·</span>
             <span>
               {t.admin.storageLabel}{' '}
               {session.storageMode === 'supabase'
                 ? t.admin.storageSupabase
-                : t.admin.storageLocal}
+                : t.admin.storageUnconfigured}
             </span>
           </div>
         </div>
@@ -564,6 +1096,13 @@ export function AdminPage() {
         <div className="rounded-xl border border-[#D4AF37]/45 bg-[#D4AF37]/10 px-4 py-3 text-sm text-[#F2CF66] flex items-center gap-2">
           <Check className="h-4 w-4 shrink-0" />
           <span>{feedbackBanner}</span>
+        </div>
+      )}
+
+      {errorBanner && (
+        <div className="rounded-xl border border-red-500/45 bg-red-500/10 px-4 py-3 text-sm text-red-200 flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>{errorBanner}</span>
         </div>
       )}
 
@@ -595,7 +1134,9 @@ export function AdminPage() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             <div className="surface-card rounded-xl p-5 space-y-1.5">
-              <p className="text-xs text-slate-400">{isFa ? 'محصولات منتشرشده' : 'Published Products'}</p>
+              <p className="text-xs text-slate-400">
+                {isFa ? 'محصولات منتشرشده' : 'Published Products'}
+              </p>
               <p className="font-mono-tabular text-3xl font-bold text-white">
                 {overview?.publishedProducts ?? 0}
                 <span className="text-sm font-normal text-slate-500">
@@ -606,14 +1147,22 @@ export function AdminPage() {
             </div>
 
             <div className="surface-card rounded-xl p-5 space-y-1.5">
-              <p className="text-xs text-slate-400">{isFa ? 'اخبار و اطلاعیه‌ها' : 'News Dispatches'}</p>
+              <p className="text-xs text-slate-400">
+                {isFa ? 'اخبار منتشرشده' : 'Published News'}
+              </p>
               <p className="font-mono-tabular text-3xl font-bold text-white">
-                {overview?.totalNews ?? 0}
+                {overview?.publishedNews ?? 0}
+                <span className="text-sm font-normal text-slate-500">
+                  {' '}
+                  / {overview?.totalNews ?? 0}
+                </span>
               </p>
             </div>
 
             <div className="surface-card rounded-xl p-5 space-y-1.5">
-              <p className="text-xs text-slate-400">{isFa ? 'تیکت‌های باز پشتیبانی' : 'Open Support Tickets'}</p>
+              <p className="text-xs text-slate-400">
+                {isFa ? 'تیکت‌های باز پشتیبانی' : 'Open Support Tickets'}
+              </p>
               <p className="font-mono-tabular text-3xl font-bold text-[#F2CF66]">
                 {overview?.openTickets ?? 0}
                 <span className="text-sm font-normal text-slate-500">
@@ -624,7 +1173,9 @@ export function AdminPage() {
             </div>
 
             <div className="surface-card rounded-xl p-5 space-y-1.5">
-              <p className="text-xs text-slate-400">{isFa ? 'پیشنهادهای جدید / پیام‌ها' : 'New Suggestions / Messages'}</p>
+              <p className="text-xs text-slate-400">
+                {isFa ? 'پیشنهادهای جدید / پیام‌های خوانده‌نشده' : 'New Suggestions / Unread Messages'}
+              </p>
               <p className="font-mono-tabular text-3xl font-bold text-white">
                 {overview?.pendingSuggestions ?? 0}
                 <span className="text-sm font-normal text-slate-500">
@@ -639,12 +1190,14 @@ export function AdminPage() {
             <Database className="h-5 w-5 text-[#D4AF37] shrink-0 mt-0.5" />
             <div className="space-y-1">
               <h2 className="text-sm font-semibold text-white">
-                {isFa ? 'آماده اتصال به Supabase و استقرار در Render' : 'Supabase & Render Architecture Status'}
+                {isFa
+                  ? 'وضعیت اتصال زنده به Supabase PostgreSQL و Auth'
+                  : 'Live Supabase PostgreSQL & Auth Status'}
               </h2>
               <p className="text-xs leading-relaxed text-slate-400">
                 {isFa
-                  ? 'کد بک‌اند به‌طور خودکار متغیرهای SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY را بررسی می‌کند. در صورت تنظیم، تمام داده‌ها در PostgreSQL سوپابیس ذخیره می‌شوند و اسکیما در فایل supabase/schema.sql آماده است.'
-                  : 'The server repository automatically switches to Supabase PostgreSQL when SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are configured (schema provided in supabase/schema.sql).'}
+                  ? 'تمامی عملیات محصولات، اخبار، تیم، تیکت‌ها، پیشنهادها، تنظیمات و بارگذاری تصاویر مستقیماً در پایگاه داده و فضای ذخیره‌سازی Supabase ثبت می‌شوند.'
+                  : 'All catalog items, dispatches, team profiles, tickets, feedback, settings, and media uploads persist directly in Supabase PostgreSQL & Storage.'}
               </p>
             </div>
           </div>
@@ -777,7 +1330,7 @@ export function AdminPage() {
             {/* Icon URL or Upload */}
             <div className="space-y-2">
               <span className="block text-xs text-slate-300">
-                {isFa ? 'آیکون برنامه (آدرس یا آپلود فایل)' : 'App Icon (URL or Upload)'}
+                {isFa ? 'آیکون برنامه (آدرس یا آپلود به Supabase)' : 'App Icon (URL or Supabase Upload)'}
               </span>
               <div className="flex flex-wrap items-center gap-3">
                 <input
@@ -788,12 +1341,20 @@ export function AdminPage() {
                 />
                 <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/15 bg-white/5 text-xs text-slate-200 hover:border-[#D4AF37]/50 cursor-pointer">
                   <Upload className="h-3.5 w-3.5" />
-                  <span>{isFa ? 'آپلود آیکون' : 'Upload Icon'}</span>
+                  <span>
+                    {uploadingField === 'icon'
+                      ? isFa
+                        ? 'در حال آپلود...'
+                        : 'Uploading...'
+                      : isFa
+                        ? 'آپلود آیکون'
+                        : 'Upload Icon'}
+                  </span>
                   <input
                     type="file"
                     accept="image/*"
                     className="hidden"
-                    onChange={(e) => void handleUploadSingle(e, setPIconUrl)}
+                    onChange={(e) => void handleUploadSingle(e, 'icons', 'icon', setPIconUrl)}
                   />
                 </label>
               </div>
@@ -825,7 +1386,15 @@ export function AdminPage() {
                 </button>
                 <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/15 bg-white/5 text-xs text-slate-200 cursor-pointer">
                   <Upload className="h-3.5 w-3.5" />
-                  <span>{isFa ? 'آپلود تصویر' : 'Upload'}</span>
+                  <span>
+                    {uploadingField === 'screenshots'
+                      ? isFa
+                        ? 'در حال آپلود...'
+                        : 'Uploading...'
+                      : isFa
+                        ? 'آپلود تصویر'
+                        : 'Upload'}
+                  </span>
                   <input
                     type="file"
                     accept="image/*"
@@ -901,7 +1470,7 @@ export function AdminPage() {
                   onChange={(e) => setPPublished(e.target.checked)}
                   className="accent-[#D4AF37]"
                 />
-                <span>{isFa ? 'انتشار عمومی در سایت' : 'Published on Website'}</span>
+                <span>{isFa ? 'انتشار عمومی در سایت (در غیراینصورت پیش‌نویس)' : 'Published (unchecked = Draft)'}</span>
               </label>
               <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
                 <input
@@ -925,23 +1494,57 @@ export function AdminPage() {
                     ? 'ذخیره تغییرات'
                     : 'Save Changes'
                   : isFa
-                    ? 'ثبت و انتشار محصول'
+                    ? 'ثبت محصول'
                     : 'Create Product'}
               </span>
             </button>
           </form>
 
-          {/* Existing Products List */}
+          {/* Existing Products List with Search & Filter */}
           <div className="lg:col-span-5 space-y-3">
-            <h3 className="text-sm font-semibold text-white">
-              {isFa ? `محصولات ثبت‌شده (${adminProducts.length})` : `Registered Products (${adminProducts.length})`}
-            </h3>
-            {adminProducts.length === 0 ? (
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-white">
+                {isFa ? `محصولات (${filteredProducts.length})` : `Products (${filteredProducts.length})`}
+              </h3>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="relative sm:col-span-1">
+                <Search className="h-3.5 w-3.5 text-slate-400 absolute top-1/2 -translate-y-1/2 left-2.5" />
+                <input
+                  value={prodQuery}
+                  onChange={(e) => setProdQuery(e.target.value)}
+                  placeholder={isFa ? 'جستجو...' : 'Search...'}
+                  className="w-full rounded-lg border border-white/10 bg-[#0d0e12] pl-8 pr-2.5 py-1.5 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+                />
+              </div>
+              <select
+                value={prodCatFilter}
+                onChange={(e) => setProdCatFilter(e.target.value as 'all' | ProductCategory)}
+                className="rounded-lg border border-white/10 bg-[#0d0e12] px-2.5 py-1.5 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+              >
+                <option value="all">{isFa ? 'همه دسته‌ها' : 'All Categories'}</option>
+                <option value="game">{t.products.categoryLabels.game}</option>
+                <option value="app">{t.products.categoryLabels.app}</option>
+                <option value="tool">{t.products.categoryLabels.tool}</option>
+              </select>
+              <select
+                value={prodPubFilter}
+                onChange={(e) => setProdPubFilter(e.target.value as 'all' | 'published' | 'draft')}
+                className="rounded-lg border border-white/10 bg-[#0d0e12] px-2.5 py-1.5 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+              >
+                <option value="all">{isFa ? 'همه وضعیت‌ها' : 'All Status'}</option>
+                <option value="published">{isFa ? 'منتشرشده' : 'Published'}</option>
+                <option value="draft">{isFa ? 'پیش‌نویس' : 'Draft'}</option>
+              </select>
+            </div>
+
+            {filteredProducts.length === 0 ? (
               <div className="surface-card rounded-xl p-6 text-xs text-slate-400">
-                {isFa ? 'هنوز محصولی ثبت نشده است.' : 'No products registered yet.'}
+                {isFa ? 'محصولی مطابق فیلتر یافت نشد.' : 'No matching products found.'}
               </div>
             ) : (
-              adminProducts.map((p) => (
+              filteredProducts.map((p) => (
                 <div
                   key={p.id}
                   className="surface-card rounded-xl p-4 flex items-center justify-between gap-3"
@@ -957,11 +1560,22 @@ export function AdminPage() {
                         {isFa ? p.titleFa : p.titleEn}
                       </p>
                       <p className="font-mono-tabular text-xs text-slate-400 truncate">
-                        {p.category} · v{p.version} · {p.published ? 'Published' : 'Draft'}
+                        {p.category} · v{p.version} ·{' '}
+                        <span className={p.published ? 'text-emerald-400' : 'text-amber-300'}>
+                          {p.published ? (isFa ? 'منتشرشده' : 'Published') : isFa ? 'پیش‌نویس' : 'Draft'}
+                        </span>
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => void handleToggleProductPublish(p)}
+                      title={p.published ? 'Move to Draft' : 'Publish'}
+                      className="h-8 w-8 rounded-lg border border-white/10 flex items-center justify-center text-slate-300 hover:text-[#F2CF66] cursor-pointer"
+                    >
+                      {p.published ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                    </button>
                     <button
                       type="button"
                       onClick={() => startEditProduct(p)}
@@ -993,15 +1607,27 @@ export function AdminPage() {
             onSubmit={handleNewsSubmit}
             className="lg:col-span-6 surface-card rounded-2xl p-6 space-y-4"
           >
-            <h2 className="text-base font-bold text-white">
-              {editingNewsId
-                ? isFa
-                  ? 'ویرایش خبر'
-                  : 'Edit News Post'
-                : isFa
-                  ? 'انتشار خبر یا اطلاعیه جدید'
-                  : 'Publish News or Announcement'}
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-white">
+                {editingNewsId
+                  ? isFa
+                    ? 'ویرایش خبر'
+                    : 'Edit News Post'
+                  : isFa
+                    ? 'انتشار خبر یا اطلاعیه جدید'
+                    : 'Publish News or Announcement'}
+              </h2>
+              {editingNewsId && (
+                <button
+                  type="button"
+                  onClick={resetNewsForm}
+                  className="text-xs text-slate-400 hover:text-white cursor-pointer"
+                >
+                  {isFa ? 'انصراف' : 'Cancel'}
+                </button>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <label className="block space-y-1 text-xs text-slate-300">
                 <span>{isFa ? 'عنوان فارسی *' : 'Title (FA) *'}</span>
@@ -1084,30 +1710,70 @@ export function AdminPage() {
               />
               <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/15 bg-white/5 text-xs text-slate-200 cursor-pointer">
                 <Upload className="h-3.5 w-3.5" />
-                <span>{isFa ? 'آپلود' : 'Upload'}</span>
+                <span>
+                  {uploadingField === 'news'
+                    ? isFa
+                      ? 'در حال آپلود...'
+                      : 'Uploading...'
+                    : isFa
+                      ? 'آپلود'
+                      : 'Upload'}
+                </span>
                 <input
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={(e) => void handleUploadSingle(e, setNCoverUrl)}
+                  onChange={(e) => void handleUploadSingle(e, 'news', 'news', setNCoverUrl)}
                 />
               </label>
             </div>
-            <button
-              type="submit"
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-sm font-semibold hover:brightness-110 cursor-pointer"
-            >
-              {editingNewsId ? (isFa ? 'به‌روزرسانی' : 'Update') : isFa ? 'انتشار خبر' : 'Publish'}
-            </button>
+            <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={nPublished}
+                onChange={(e) => setNPublished(e.target.checked)}
+                className="accent-[#D4AF37]"
+              />
+              <span>{isFa ? 'انتشار عمومی خبر (در غیراینصورت پیش‌نویس)' : 'Published (unchecked = Draft)'}</span>
+            </label>
+            <div>
+              <button
+                type="submit"
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-sm font-semibold hover:brightness-110 cursor-pointer"
+              >
+                {editingNewsId ? (isFa ? 'به‌روزرسانی' : 'Update') : isFa ? 'ذخیره خبر' : 'Save News'}
+              </button>
+            </div>
           </form>
 
           <div className="lg:col-span-6 space-y-3">
-            {adminNews.length === 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="relative">
+                <Search className="h-3.5 w-3.5 text-slate-400 absolute top-1/2 -translate-y-1/2 left-2.5" />
+                <input
+                  value={newsQuery}
+                  onChange={(e) => setNewsQuery(e.target.value)}
+                  placeholder={isFa ? 'جستجو در اخبار...' : 'Search news...'}
+                  className="w-full rounded-lg border border-white/10 bg-[#0d0e12] pl-8 pr-2.5 py-1.5 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+                />
+              </div>
+              <select
+                value={newsPubFilter}
+                onChange={(e) => setNewsPubFilter(e.target.value as 'all' | 'published' | 'draft')}
+                className="rounded-lg border border-white/10 bg-[#0d0e12] px-2.5 py-1.5 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+              >
+                <option value="all">{isFa ? 'همه وضعیت‌ها' : 'All Status'}</option>
+                <option value="published">{isFa ? 'منتشرشده' : 'Published'}</option>
+                <option value="draft">{isFa ? 'پیش‌نویس' : 'Draft'}</option>
+              </select>
+            </div>
+
+            {filteredNews.length === 0 ? (
               <div className="surface-card rounded-xl p-6 text-xs text-slate-400">
                 {t.news.emptyTitle}
               </div>
             ) : (
-              adminNews.map((post) => (
+              filteredNews.map((post) => (
                 <div
                   key={post.id}
                   className="surface-card rounded-xl p-4 flex items-center justify-between gap-4"
@@ -1117,10 +1783,20 @@ export function AdminPage() {
                       {isFa ? post.titleFa : post.titleEn}
                     </p>
                     <p className="font-mono-tabular text-xs text-slate-400">
-                      {post.category} · {post.publishedAt.slice(0, 10)}
+                      {post.category} · {post.publishedAt.slice(0, 10)} ·{' '}
+                      <span className={post.published ? 'text-emerald-400' : 'text-amber-300'}>
+                        {post.published ? (isFa ? 'منتشرشده' : 'Published') : isFa ? 'پیش‌نویس' : 'Draft'}
+                      </span>
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => void handleToggleNewsPublish(post)}
+                      className="h-8 w-8 rounded-lg border border-white/10 flex items-center justify-center text-slate-300 hover:text-[#F2CF66] cursor-pointer"
+                    >
+                      {post.published ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -1133,6 +1809,7 @@ export function AdminPage() {
                         setNContentFa(post.contentFa);
                         setNContentEn(post.contentEn);
                         setNCoverUrl(post.coverUrl);
+                        setNPublished(post.published);
                       }}
                       className="h-8 w-8 rounded-lg border border-white/10 flex items-center justify-center text-slate-300 hover:text-white cursor-pointer"
                     >
@@ -1160,15 +1837,27 @@ export function AdminPage() {
             onSubmit={handleTeamSubmit}
             className="lg:col-span-6 surface-card rounded-2xl p-6 space-y-4"
           >
-            <h2 className="text-base font-bold text-white">
-              {editingTeamId
-                ? isFa
-                  ? 'ویرایش عضو تیم'
-                  : 'Edit Team Member'
-                : isFa
-                  ? 'افزودن عضو جدید به تیم TAK1'
-                  : 'Add TAK1 Team Member'}
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-white">
+                {editingTeamId
+                  ? isFa
+                    ? 'ویرایش عضو تیم'
+                    : 'Edit Team Member'
+                  : isFa
+                    ? 'افزودن عضو جدید به تیم TAK1'
+                    : 'Add TAK1 Team Member'}
+              </h2>
+              {editingTeamId && (
+                <button
+                  type="button"
+                  onClick={resetTeamForm}
+                  className="text-xs text-slate-400 hover:text-white cursor-pointer"
+                >
+                  {isFa ? 'انصراف' : 'Cancel'}
+                </button>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <label className="block space-y-1 text-xs text-slate-300">
                 <span>{isFa ? 'نام (فارسی) *' : 'Name (FA) *'}</span>
@@ -1236,13 +1925,41 @@ export function AdminPage() {
               />
               <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/15 bg-white/5 text-xs text-slate-200 cursor-pointer">
                 <Upload className="h-3.5 w-3.5" />
-                <span>{isFa ? 'آپلود' : 'Upload'}</span>
+                <span>
+                  {uploadingField === 'team'
+                    ? isFa
+                      ? 'در حال آپلود...'
+                      : 'Uploading...'
+                    : isFa
+                      ? 'آپلود'
+                      : 'Upload'}
+                </span>
                 <input
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={(e) => void handleUploadSingle(e, setMAvatarUrl)}
+                  onChange={(e) => void handleUploadSingle(e, 'team', 'team', setMAvatarUrl)}
                 />
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center gap-6">
+              <label className="inline-flex items-center gap-2 text-xs text-slate-300">
+                <span>{isFa ? 'ترتیب نمایش:' : 'Sort Order:'}</span>
+                <input
+                  type="number"
+                  value={mSortOrder}
+                  onChange={(e) => setMSortOrder(Number(e.target.value))}
+                  className="w-20 rounded-lg border border-white/10 bg-[#070709] px-2.5 py-1 font-mono-tabular text-xs text-white"
+                />
+              </label>
+              <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={mPublished}
+                  onChange={(e) => setMPublished(e.target.checked)}
+                  className="accent-[#D4AF37]"
+                />
+                <span>{isFa ? 'نمایش عمومی در سایت' : 'Published on Website'}</span>
               </label>
             </div>
             <button
@@ -1254,12 +1971,33 @@ export function AdminPage() {
           </form>
 
           <div className="lg:col-span-6 space-y-3">
-            {adminTeam.length === 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="relative">
+                <Search className="h-3.5 w-3.5 text-slate-400 absolute top-1/2 -translate-y-1/2 left-2.5" />
+                <input
+                  value={teamQuery}
+                  onChange={(e) => setTeamQuery(e.target.value)}
+                  placeholder={isFa ? 'جستجو در اعضا...' : 'Search team...'}
+                  className="w-full rounded-lg border border-white/10 bg-[#0d0e12] pl-8 pr-2.5 py-1.5 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+                />
+              </div>
+              <select
+                value={teamPubFilter}
+                onChange={(e) => setTeamPubFilter(e.target.value as 'all' | 'published' | 'draft')}
+                className="rounded-lg border border-white/10 bg-[#0d0e12] px-2.5 py-1.5 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+              >
+                <option value="all">{isFa ? 'همه وضعیت‌ها' : 'All Status'}</option>
+                <option value="published">{isFa ? 'منتشرشده' : 'Published'}</option>
+                <option value="draft">{isFa ? 'پیش‌نویس' : 'Draft'}</option>
+              </select>
+            </div>
+
+            {filteredTeam.length === 0 ? (
               <div className="surface-card rounded-xl p-6 text-xs text-slate-400">
                 {t.team.emptyTitle}
               </div>
             ) : (
-              adminTeam.map((m) => (
+              filteredTeam.map((m) => (
                 <div
                   key={m.id}
                   className="surface-card rounded-xl p-4 flex items-center justify-between gap-4"
@@ -1275,11 +2013,21 @@ export function AdminPage() {
                         {isFa ? m.nameFa : m.nameEn}
                       </p>
                       <p className="text-xs text-[#D4AF37] truncate">
-                        {isFa ? m.roleFa : m.roleEn}
+                        {isFa ? m.roleFa : m.roleEn} ·{' '}
+                        <span className={m.published ? 'text-emerald-400' : 'text-amber-300'}>
+                          {m.published ? (isFa ? 'منتشرشده' : 'Published') : isFa ? 'پیش‌نویس' : 'Draft'}
+                        </span>
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => void handleToggleTeamPublish(m)}
+                      className="h-8 w-8 rounded-lg border border-white/10 flex items-center justify-center text-slate-300 hover:text-[#F2CF66] cursor-pointer"
+                    >
+                      {m.published ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -1292,6 +2040,7 @@ export function AdminPage() {
                         setMBioEn(m.bioEn);
                         setMAvatarUrl(m.avatarUrl);
                         setMSortOrder(m.sortOrder);
+                        setMPublished(m.published);
                       }}
                       className="h-8 w-8 rounded-lg border border-white/10 flex items-center justify-center text-slate-300 hover:text-white cursor-pointer"
                     >
@@ -1315,12 +2064,34 @@ export function AdminPage() {
       {/* TAB 5: Support Tickets */}
       {activeTab === 'tickets' && (
         <div className="space-y-4">
-          {tickets.length === 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="relative sm:col-span-2">
+              <Search className="h-4 w-4 text-slate-400 absolute top-1/2 -translate-y-1/2 left-3" />
+              <input
+                value={ticketQuery}
+                onChange={(e) => setTicketQuery(e.target.value)}
+                placeholder={isFa ? 'جستجو با کد رهگیری، نام، ایمیل یا موضوع...' : 'Search by tracking code, name, email, or subject...'}
+                className="w-full rounded-xl border border-white/10 bg-[#0d0e12] pl-9 pr-3 py-2 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </div>
+            <select
+              value={ticketStatusFilter}
+              onChange={(e) => setTicketStatusFilter(e.target.value as 'all' | TicketStatus)}
+              className="rounded-xl border border-white/10 bg-[#0d0e12] px-3 py-2 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+            >
+              <option value="all">{isFa ? 'همه وضعیت‌ها' : 'All Ticket Statuses'}</option>
+              <option value="open">{t.support.statusLabels.open}</option>
+              <option value="in_progress">{t.support.statusLabels.in_progress}</option>
+              <option value="resolved">{t.support.statusLabels.resolved}</option>
+            </select>
+          </div>
+
+          {filteredTickets.length === 0 ? (
             <div className="surface-card rounded-xl p-8 text-center text-sm text-slate-400">
-              {isFa ? 'هیچ تیکت پشتیبانی ثبت نشده است.' : 'No support tickets submitted yet.'}
+              {isFa ? 'تیکتی یافت نشد.' : 'No support tickets match the current filter.'}
             </div>
           ) : (
-            tickets.map((ticket) => (
+            filteredTickets.map((ticket) => (
               <div key={ticket.id} className="surface-card rounded-xl p-6 space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="space-y-1">
@@ -1384,12 +2155,35 @@ export function AdminPage() {
       {/* TAB 6: Suggestions */}
       {activeTab === 'suggestions' && (
         <div className="space-y-4">
-          {suggestions.length === 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="relative sm:col-span-2">
+              <Search className="h-4 w-4 text-slate-400 absolute top-1/2 -translate-y-1/2 left-3" />
+              <input
+                value={sugQuery}
+                onChange={(e) => setSugQuery(e.target.value)}
+                placeholder={isFa ? 'جستجو در پیشنهادها...' : 'Search suggestions...'}
+                className="w-full rounded-xl border border-white/10 bg-[#0d0e12] pl-9 pr-3 py-2 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </div>
+            <select
+              value={sugStatusFilter}
+              onChange={(e) => setSugStatusFilter(e.target.value as 'all' | SuggestionStatus)}
+              className="rounded-xl border border-white/10 bg-[#0d0e12] px-3 py-2 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+            >
+              <option value="all">{isFa ? 'همه وضعیت‌ها' : 'All Statuses'}</option>
+              <option value="new">new</option>
+              <option value="reviewed">reviewed</option>
+              <option value="planned">planned</option>
+              <option value="archived">archived</option>
+            </select>
+          </div>
+
+          {filteredSuggestions.length === 0 ? (
             <div className="surface-card rounded-xl p-8 text-center text-sm text-slate-400">
-              {isFa ? 'هنوز پیشنهادی ثبت نشده است.' : 'No suggestions received yet.'}
+              {isFa ? 'پیشنهادی یافت نشد.' : 'No suggestions match the filter.'}
             </div>
           ) : (
-            suggestions.map((s) => (
+            filteredSuggestions.map((s) => (
               <div key={s.id} className="surface-card rounded-xl p-6 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -1421,7 +2215,7 @@ export function AdminPage() {
                     onChange={(e) =>
                       setSuggestionNotes((prev) => ({ ...prev, [s.id]: e.target.value }))
                     }
-                    placeholder={isFa ? 'یادداشت مدیریتی...' : 'Admin note...'}
+                    placeholder={isFa ? 'یادداشت استودیو...' : 'Studio note...'}
                     className="flex-1 min-w-[200px] rounded-xl border border-white/10 bg-[#070709] px-3 py-2 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
                   />
                   {(['reviewed', 'planned', 'archived'] as SuggestionStatus[]).map((st) => (
@@ -1448,12 +2242,33 @@ export function AdminPage() {
       {/* TAB 7: Contact Inbox */}
       {activeTab === 'messages' && (
         <div className="space-y-4">
-          {messages.length === 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="relative sm:col-span-2">
+              <Search className="h-4 w-4 text-slate-400 absolute top-1/2 -translate-y-1/2 left-3" />
+              <input
+                value={msgQuery}
+                onChange={(e) => setMsgQuery(e.target.value)}
+                placeholder={isFa ? 'جستجو در پیام‌های تماس...' : 'Search messages...'}
+                className="w-full rounded-xl border border-white/10 bg-[#0d0e12] pl-9 pr-3 py-2 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </div>
+            <select
+              value={msgReadFilter}
+              onChange={(e) => setMsgReadFilter(e.target.value as 'all' | 'unread' | 'read')}
+              className="rounded-xl border border-white/10 bg-[#0d0e12] px-3 py-2 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+            >
+              <option value="all">{isFa ? 'همه پیام‌ها' : 'All Messages'}</option>
+              <option value="unread">{isFa ? 'خوانده‌نشده' : 'Unread'}</option>
+              <option value="read">{isFa ? 'خوانده‌شده' : 'Read'}</option>
+            </select>
+          </div>
+
+          {filteredMessages.length === 0 ? (
             <div className="surface-card rounded-xl p-8 text-center text-sm text-slate-400">
-              {isFa ? 'صندوق پیام‌های تماس خالی است.' : 'Contact inbox is empty.'}
+              {isFa ? 'پیامی مطابق فیلتر یافت نشد.' : 'No contact messages found.'}
             </div>
           ) : (
-            messages.map((m) => (
+            filteredMessages.map((m) => (
               <div key={m.id} className="surface-card rounded-xl p-6 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -1493,6 +2308,266 @@ export function AdminPage() {
               </div>
             ))
           )}
+        </div>
+      )}
+
+      {/* TAB 8: General Site Settings */}
+      {activeTab === 'settings' && canManageAdminSettings && (
+        <form onSubmit={handleSaveSettings} className="surface-card rounded-2xl p-6 sm:p-8 space-y-6 max-w-4xl">
+          <div className="flex items-center gap-3 border-b border-white/10 pb-4">
+            <Globe className="h-5 w-5 text-[#D4AF37]" />
+            <div>
+              <h2 className="text-base font-bold text-white">
+                {isFa ? 'تنظیمات عمومی وب‌سایت TAK1' : 'General Studio Website Settings'}
+              </h2>
+              {siteSettings?.updatedAt && (
+                <p className="font-mono-tabular text-[11px] text-slate-500">
+                  {isFa ? 'آخرین بروزرسانی:' : 'Updated:'} {siteSettings.updatedAt.slice(0, 19)}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>{isFa ? 'نام استودیو (فارسی)' : 'Studio Name (FA)'}</span>
+              <input
+                value={sNameFa}
+                onChange={(e) => setSNameFa(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3 py-2 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>{isFa ? 'نام استودیو (انگلیسی)' : 'Studio Name (EN)'}</span>
+              <input
+                value={sNameEn}
+                onChange={(e) => setSNameEn(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3 py-2 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>{isFa ? 'شعار / معرفی فوتر (فارسی)' : 'Footer Tagline (FA)'}</span>
+              <input
+                value={sTaglineFa}
+                onChange={(e) => setSTaglineFa(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3 py-2 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>{isFa ? 'شعار / معرفی فوتر (انگلیسی)' : 'Footer Tagline (EN)'}</span>
+              <input
+                value={sTaglineEn}
+                onChange={(e) => setSTaglineEn(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3 py-2 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>{isFa ? 'ایمیل رسمی پشتیبانی / تماس' : 'Official Contact Email'}</span>
+              <input
+                type="email"
+                value={sEmail}
+                onChange={(e) => setSEmail(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3 py-2 font-mono-tabular text-sm text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>{isFa ? 'دامنه رسمی' : 'Official Domain'}</span>
+              <input
+                value={sDomain}
+                onChange={(e) => setSDomain(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3 py-2 font-mono-tabular text-sm text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>{isFa ? 'پیام اعلان عمومی (فارسی - اختیاری)' : 'Public Announcement (FA)'}</span>
+              <input
+                value={sAnnFa}
+                onChange={(e) => setSAnnFa(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3 py-2 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>{isFa ? 'پیام اعلان عمومی (انگلیسی - اختیاری)' : 'Public Announcement (EN)'}</span>
+              <input
+                value={sAnnEn}
+                onChange={(e) => setSAnnEn(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3 py-2 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-white/10">
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>Telegram URL</span>
+              <input
+                value={sTelegram}
+                onChange={(e) => setSTelegram(e.target.value)}
+                placeholder="https://t.me/..."
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3 py-2 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>Instagram URL</span>
+              <input
+                value={sInstagram}
+                onChange={(e) => setSInstagram(e.target.value)}
+                placeholder="https://instagram.com/..."
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3 py-2 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>Discord URL</span>
+              <input
+                value={sDiscord}
+                onChange={(e) => setSDiscord(e.target.value)}
+                placeholder="https://discord.gg/..."
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3 py-2 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>GitHub URL</span>
+              <input
+                value={sGithub}
+                onChange={(e) => setSGithub(e.target.value)}
+                placeholder="https://github.com/..."
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3 py-2 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+          </div>
+
+          <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={sMaint}
+              onChange={(e) => setSMaint(e.target.checked)}
+              className="accent-[#D4AF37]"
+            />
+            <span>{isFa ? 'حالت نگهداری (Maintenance Mode)' : 'Maintenance Mode'}</span>
+          </label>
+
+          <div>
+            <button
+              type="submit"
+              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-sm font-semibold hover:brightness-110 cursor-pointer"
+            >
+              {isFa ? 'ذخیره تنظیمات در Supabase' : 'Save Site Settings'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* TAB 9: Admin Users & Roles */}
+      {activeTab === 'admins' && canManageAdminSettings && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          <form
+            onSubmit={handleCreateAdminUser}
+            className="lg:col-span-5 surface-card rounded-2xl p-6 space-y-4"
+          >
+            <h2 className="text-base font-bold text-white">
+              {isFa ? 'افزودن مدیر جدید (Supabase Auth)' : 'Add Studio Administrator'}
+            </h2>
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>{isFa ? 'نام نمایشی' : 'Display Name'}</span>
+              <input
+                value={newAdminName}
+                onChange={(e) => setNewAdminName(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3 py-2 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>{isFa ? 'ایمیل *' : 'Email *'}</span>
+              <input
+                required
+                type="email"
+                value={newAdminEmail}
+                onChange={(e) => setNewAdminEmail(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3 py-2 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>{isFa ? 'رمز عبور (حداقل ۸ کاراکتر) *' : 'Password (min 8 chars) *'}</span>
+              <input
+                required
+                minLength={8}
+                type="password"
+                value={newAdminPassword}
+                onChange={(e) => setNewAdminPassword(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3 py-2 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
+              />
+            </label>
+            <label className="block space-y-1 text-xs text-slate-300">
+              <span>{isFa ? 'سطح دسترسی (Role)' : 'Access Role'}</span>
+              <select
+                value={newAdminRole}
+                onChange={(e) => setNewAdminRole(e.target.value as AdminRole)}
+                className="w-full rounded-xl border border-white/10 bg-[#070709] px-3 py-2 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
+              >
+                <option value="editor">editor ({isFa ? 'مدیریت محتوا' : 'Content Only'})</option>
+                <option value="admin">admin ({isFa ? 'مدیریت کامل + تنظیمات' : 'Full + Settings'})</option>
+                {session.adminRole === 'super_admin' && (
+                  <option value="super_admin">super_admin ({isFa ? 'مدیر ارشد' : 'Super Admin'})</option>
+                )}
+              </select>
+            </label>
+            <button
+              type="submit"
+              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-sm font-semibold hover:brightness-110 cursor-pointer"
+            >
+              {isFa ? 'ساخت حساب مدیر' : 'Create Admin Account'}
+            </button>
+          </form>
+
+          <div className="lg:col-span-7 space-y-3">
+            {adminUsers.map((u) => (
+              <div
+                key={u.id}
+                className="surface-card rounded-xl p-4 flex flex-wrap items-center justify-between gap-4"
+              >
+                <div className="space-y-0.5 min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">
+                    {u.displayName || u.email}
+                  </p>
+                  <p className="font-mono-tabular text-xs text-slate-400 truncate">
+                    {u.email} · {u.isActive ? (isFa ? 'فعال' : 'Active') : isFa ? 'غیرفعال' : 'Disabled'}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <select
+                    value={u.role}
+                    disabled={u.id === session.adminId}
+                    onChange={(e) => void handleChangeAdminRole(u, e.target.value as AdminRole)}
+                    className="rounded-lg border border-white/10 bg-[#070709] px-2.5 py-1.5 font-mono-tabular text-xs text-white disabled:opacity-50"
+                  >
+                    <option value="editor">editor</option>
+                    <option value="admin">admin</option>
+                    <option value="super_admin">super_admin</option>
+                  </select>
+
+                  {u.id !== session.adminId && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void handleToggleAdminActive(u)}
+                        className="px-2.5 py-1.5 rounded-lg border border-white/15 text-xs text-slate-200 hover:border-[#D4AF37]/50 cursor-pointer"
+                      >
+                        {u.isActive ? (isFa ? 'غیرفعال کردن' : 'Disable') : isFa ? 'فعال کردن' : 'Enable'}
+                      </button>
+                      {session.adminRole === 'super_admin' && (
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteAdminUser(u.id)}
+                          className="h-8 w-8 rounded-lg border border-white/10 flex items-center justify-center text-red-400 hover:bg-red-500/15 cursor-pointer"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
