@@ -42,11 +42,11 @@ export function HomePage() {
                 </div>
               </div>
 
-              <h1 className="font-display text-3xl sm:text-5xl lg:text-[3.25rem] font-bold leading-[1.2] tracking-tight text-metallic-silver">
+              <h1 className="font-display text-[clamp(0.85rem,2.2vw,1.625rem)] font-bold leading-tight tracking-tight text-metallic-silver whitespace-nowrap">
                 {t.hero.title}
               </h1>
 
-              <p className="max-w-2xl text-base sm:text-lg leading-relaxed text-slate-300">
+              <p className="max-w-lg text-xs sm:text-[13px] leading-relaxed text-slate-400">
                 {t.hero.subtitle}
               </p>
 

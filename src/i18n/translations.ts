@@ -18,7 +18,7 @@ export const translations = {
     },
     hero: {
       kicker: 'استودیوی مستقل توسعه بازی و نرم‌افزار · kalametgame.ir',
-      title: 'مهندسی بازی‌های مدرن و نرم‌افزارهای دقیق با هویت TAK1',
+      title: 'سازنده بازی‌های اندرویدی، اپلیکیشن و سایت‌های مدرن',
       subtitle:
         'استودیوی TAK1 بر طراحی تجربه‌های تعاملی روان، موتورهای بهینه موبایل و ساخت اپلیکیشن‌های کاربردی با استانداردهای مهندسی روز تمرکز دارد.',
       primaryCta: 'مشاهده بازی‌ها و برنامه‌ها',
@@ -252,7 +252,7 @@ export const translations = {
     },
     hero: {
       kicker: 'Independent Game & Software Studio · kalametgame.ir',
-      title: 'Precision Game Engineering & Bespoke Software by TAK1',
+      title: 'Creator of Android Games, Applications & Modern Websites',
       subtitle:
         'TAK1 Game Studio designs responsive interactive worlds, optimized mobile engines, and purpose-built software crafted with disciplined engineering.',
       primaryCta: 'Explore Games & Apps',
