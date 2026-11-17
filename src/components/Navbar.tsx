@@ -18,7 +18,6 @@ export function Navbar() {
     ...primaryLinks,
     { to: '/feedback', label: t.nav.feedback },
     { to: '/contact', label: t.nav.contact },
-    { to: '/admin', label: t.nav.admin },
   ];
 
   const isActive = (to: string) => {

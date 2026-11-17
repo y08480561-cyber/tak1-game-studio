@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, ExternalLink, Gamepad2, LifeBuoy, MessageSquarePlus, Newspaper, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ExternalLink, Gamepad2, LifeBuoy, MessageSquarePlus, Newspaper } from 'lucide-react';
 import { useStudio } from '../context/StudioContext';
 import { SafeMedia } from '../components/SafeMedia';
 
@@ -128,31 +128,7 @@ export function HomePage() {
               {t.products.retry}
             </button>
           </div>
-        ) : featuredProducts.length === 0 ? (
-          <div className="surface-card rounded-2xl p-8 sm:p-10 grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
-            <div className="md:col-span-5">
-              <SafeMedia
-                src="/src/assets/images/studio_craft_atmosphere_1794901595072.jpg"
-                alt="TAK1 Game Studio Craft"
-                className="w-full h-56 rounded-xl object-cover border border-white/10"
-              />
-            </div>
-            <div className="md:col-span-7 space-y-4">
-              <h3 className="text-xl font-bold text-white">{t.homeSections.emptyReleasesTitle}</h3>
-              <p className="text-sm leading-relaxed text-slate-400">
-                {t.homeSections.emptyReleasesDesc}
-              </p>
-              <button
-                type="button"
-                onClick={() => navigate('/admin')}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-[#D4AF37]/45 bg-[#D4AF37]/10 text-[#F2CF66] text-sm font-medium hover:bg-[#D4AF37]/20 transition-colors cursor-pointer"
-              >
-                <ShieldCheck className="h-4 w-4" />
-                <span>{t.homeSections.goToAdmin}</span>
-              </button>
-            </div>
-          </div>
-        ) : (
+        ) : featuredProducts.length > 0 ? (
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
             {featuredProducts.map((product) => {
               const title = isRtl ? product.titleFa : product.titleEn;
@@ -192,7 +168,7 @@ export function HomePage() {
               );
             })}
           </div>
-        )}
+        ) : null}
       </section>
 
       {/* 3. Latest News & Dispatches */}
