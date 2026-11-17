@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { LifeBuoy } from 'lucide-react';
+import { Headphones } from 'lucide-react';
 import { useStudio } from '../context/StudioContext';
 import type { TicketStatus } from '../types/studio';
 
@@ -105,7 +105,7 @@ export function SupportBubble() {
         className="relative group flex items-center justify-center h-14 w-14 rounded-2xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] shadow-lg shadow-black/60 hover:scale-105 transition duration-200 cursor-pointer focus:outline-none"
         aria-label="TAK1 Support & Chat"
       >
-        <LifeBuoy className="h-7 w-7 text-[#070709]" />
+        <Headphones className="h-7 w-7 text-[#070709]" />
 
         {hasNewReply && (
           <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white shadow-md animate-bounce">
