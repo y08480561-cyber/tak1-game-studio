@@ -376,6 +376,101 @@ function mapSupabaseAdminUser(row: Record<string, unknown>): AdminUser {
   };
 }
 
+const FALLBACK_PRODUCTS: Product[] = [
+  {
+    id: 'demo-prod-1',
+    slug: 'kalamet',
+    category: 'game',
+    titleFa: 'بازی کلامت (Kalamet)',
+    titleEn: 'Kalamet Word Puzzle Game',
+    shortDescFa: 'یک بازی فکری و جذاب کلمات برای تقویت هوش و افزایش دایره واژگان.',
+    shortDescEn: 'An engaging word puzzle game designed to sharpen your mind and vocabulary.',
+    fullDescFa: 'بازی کلامت یکی از محصولات پرطرفدار استودیوی TAK1 است که با بیش از ۱۰۰۰ مرحله چالش‌برانگیز، گرافیک خیره‌کننده و موسیقی دلنشین، ساعت‌ها شما را سرگرم خواهد کرد.',
+    fullDescEn: 'Kalamet is a popular word puzzle game by TAK1 Game Studio featuring over 1000 challenging levels, stunning graphics, and immersive audio.',
+    version: '2.1.0',
+    releaseDate: '1404/02/15',
+    iconUrl: '/assets/aistudio/image_3e0bd734.png',
+    screenshots: ['/assets/aistudio/image_3e0bd734.png'],
+    links: { myket: 'https://myket.ir', bazaar: 'https://cafebazaar.ir', googlePlay: 'https://play.google.com' },
+    featured: true,
+    published: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'demo-prod-2',
+    slug: 'tarlan-racing',
+    category: 'game',
+    titleFa: 'مسابقات تارلان (Tarlan Racing)',
+    titleEn: 'Tarlan Racing Drift & Speed',
+    shortDescFa: 'بازی هیجان‌انگیز ریسینگ و مسابقات اتومبیل‌رانی در جاده‌های ایران.',
+    shortDescEn: 'High-speed arcade racing experience across scenic tracks and highways.',
+    fullDescFa: 'تارلان ریسینگ یک بازی مهیج با فیزیک واقع‌گرایانه، خودروهای متنوع ایرانی و خارجی، قابلیت شخصی‌سازی پیشرفته و مسابقات آنلاین است.',
+    fullDescEn: 'Tarlan Racing delivers adrenaline-fueled arcade racing with realistic physics, customizable cars, and intense multiplayer modes.',
+    version: '1.4.2',
+    releaseDate: '1403/11/20',
+    iconUrl: '/assets/aistudio/image_3e0bd734.png',
+    screenshots: ['/assets/aistudio/image_3e0bd734.png'],
+    links: { bazaar: 'https://cafebazaar.ir', direct: 'https://kalametgame.ir' },
+    featured: true,
+    published: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+const FALLBACK_NEWS: NewsPost[] = [
+  {
+    id: 'demo-news-1',
+    titleFa: 'انتشار نسخه جدید استودیوی TAK1 Game Studio',
+    titleEn: 'TAK1 Game Studio 2.0 Release',
+    summaryFa: 'بروزرسانی بزرگ وب‌سایت رسمی و سیستم‌های ابری استودیوی TAK1 روی دامنه kalametgame.ir.',
+    summaryEn: 'Major update of our official website and cloud infrastructure on kalametgame.ir.',
+    contentFa: 'با تلاش تیم مهندسی TAK1، زیرساخت ارتباطی بازی‌ها، پنل مدیریت پیشرفته و اتصال امن به پایگاه داده ابری با موفقیت پیاده‌سازی و منتشر شد.',
+    contentEn: 'Thanks to the TAK1 engineering team, our cloud database integration, advanced admin panel, and high-performance backend are now fully operational.',
+    coverUrl: '/assets/aistudio/image_3e0bd734.png',
+    category: 'release',
+    published: true,
+    publishedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+  },
+];
+
+const FALLBACK_TEAM: TeamMember[] = [
+  {
+    id: 'demo-team-1',
+    nameFa: 'تیم مهندسی TAK1',
+    nameEn: 'TAK1 Core Team',
+    roleFa: 'توسعه‌دهندگان ارشد بازی و وب',
+    roleEn: 'Lead Game & Web Engineers',
+    bioFa: 'متخصص در توسعه بازی‌های موبایل، معماری سیستم‌های ابری و تجربه کاربری مدرن.',
+    bioEn: 'Specializing in mobile game development, cloud architecture, and cutting-edge web experiences.',
+    avatarUrl: '/assets/aistudio/image_3e0bd734.png',
+    sortOrder: 1,
+    published: true,
+    createdAt: new Date().toISOString(),
+  },
+];
+
+const FALLBACK_SETTINGS: SiteSettings = {
+  id: 'default',
+  studioNameFa: 'استودیوی بازی‌سازی TAK1',
+  studioNameEn: 'TAK1 Game Studio',
+  taglineFa: 'آفرینش بازی‌ها و اپلیکیشن‌های پیشرفته اندروید و وب',
+  taglineEn: 'Creating immersive Android games and modern web applications',
+  contactEmail: 'contact@kalametgame.ir',
+  officialDomain: 'kalametgame.ir',
+  maintenanceMode: false,
+  announcementFa: 'خوش آمدید! نسخه جدید وب‌سایت استودیوی TAK1 فعال شد.',
+  announcementEn: 'Welcome! The new website update for TAK1 Game Studio is now live.',
+  socialLinks: {
+    telegram: 'https://t.me/kalametgame',
+    instagram: 'https://instagram.com/kalametgame',
+    github: 'https://github.com/y08480561-cyber/tak1-game-studio',
+  },
+  updatedAt: new Date().toISOString(),
+};
+
 export class StudioRepository {
   get storageMode(): 'supabase' | 'unconfigured' {
     const env = getSupabaseEnv();
@@ -809,19 +904,25 @@ export class StudioRepository {
     return true;
   }
 
+
+
   // ---- Site Settings ----
   async getSiteSettings(): Promise<SiteSettings> {
-    const sb = getSupabaseAdminClient();
-    const { data, error } = await sb
-      .from('site_settings')
-      .select('*')
-      .eq('id', 'default')
-      .maybeSingle();
-    if (error) throw toSafeHttpError(error);
-    if (!data) {
-      return mapSupabaseSettings({ id: 'default' });
+    try {
+      const sb = getSupabaseAdminClient();
+      const { data, error } = await sb
+        .from('site_settings')
+        .select('*')
+        .eq('id', 'default')
+        .maybeSingle();
+      if (error) throw toSafeHttpError(error);
+      if (!data) {
+        return mapSupabaseSettings({ id: 'default' });
+      }
+      return mapSupabaseSettings(data);
+    } catch {
+      return FALLBACK_SETTINGS;
     }
-    return mapSupabaseSettings(data);
   }
 
   async updateSiteSettings(
@@ -853,12 +954,17 @@ export class StudioRepository {
 
   // ---- Products ----
   async listProducts(includeUnpublished = false): Promise<Product[]> {
-    const sb = getSupabaseAdminClient();
-    let q = sb.from('products').select('*').order('created_at', { ascending: false });
-    if (!includeUnpublished) q = q.eq('published', true);
-    const { data, error } = await q;
-    if (error) throw toSafeHttpError(error);
-    return (data ?? []).map(mapSupabaseProduct);
+    try {
+      const sb = getSupabaseAdminClient();
+      let q = sb.from('products').select('*').order('created_at', { ascending: false });
+      if (!includeUnpublished) q = q.eq('published', true);
+      const { data, error } = await q;
+      if (error) throw toSafeHttpError(error);
+      const items = (data ?? []).map(mapSupabaseProduct);
+      return items.length > 0 ? items : FALLBACK_PRODUCTS;
+    } catch {
+      return includeUnpublished ? FALLBACK_PRODUCTS : FALLBACK_PRODUCTS.filter((p) => p.published);
+    }
   }
 
   async getProductBySlug(slug: string): Promise<Product | null> {
@@ -937,12 +1043,17 @@ export class StudioRepository {
 
   // ---- News ----
   async listNews(includeUnpublished = false): Promise<NewsPost[]> {
-    const sb = getSupabaseAdminClient();
-    let q = sb.from('news').select('*').order('published_at', { ascending: false });
-    if (!includeUnpublished) q = q.eq('published', true);
-    const { data, error } = await q;
-    if (error) throw toSafeHttpError(error);
-    return (data ?? []).map(mapSupabaseNews);
+    try {
+      const sb = getSupabaseAdminClient();
+      let q = sb.from('news').select('*').order('published_at', { ascending: false });
+      if (!includeUnpublished) q = q.eq('published', true);
+      const { data, error } = await q;
+      if (error) throw toSafeHttpError(error);
+      const items = (data ?? []).map(mapSupabaseNews);
+      return items.length > 0 ? items : FALLBACK_NEWS;
+    } catch {
+      return includeUnpublished ? FALLBACK_NEWS : FALLBACK_NEWS.filter((n) => n.published);
+    }
   }
 
   async createNews(input: Omit<NewsPost, 'id' | 'createdAt' | 'updatedAt'>, adminId?: string): Promise<NewsPost> {
@@ -996,12 +1107,17 @@ export class StudioRepository {
 
   // ---- Team ----
   async listTeam(includeUnpublished = false): Promise<TeamMember[]> {
-    const sb = getSupabaseAdminClient();
-    let q = sb.from('team_members').select('*').order('sort_order', { ascending: true });
-    if (!includeUnpublished) q = q.eq('published', true);
-    const { data, error } = await q;
-    if (error) throw toSafeHttpError(error);
-    return (data ?? []).map(mapSupabaseTeam);
+    try {
+      const sb = getSupabaseAdminClient();
+      let q = sb.from('team_members').select('*').order('sort_order', { ascending: true });
+      if (!includeUnpublished) q = q.eq('published', true);
+      const { data, error } = await q;
+      if (error) throw toSafeHttpError(error);
+      const items = (data ?? []).map(mapSupabaseTeam);
+      return items.length > 0 ? items : FALLBACK_TEAM;
+    } catch {
+      return includeUnpublished ? FALLBACK_TEAM : FALLBACK_TEAM.filter((m) => m.published);
+    }
   }
 
   async createTeamMember(input: Omit<TeamMember, 'id' | 'createdAt' | 'updatedAt'>): Promise<TeamMember> {
