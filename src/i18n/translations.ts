@@ -165,6 +165,10 @@ export const translations = {
         in_progress: 'در حال پیگیری',
         resolved: 'پاسخ داده شده',
       },
+      historyTitle: 'سوابق تیکت‌های شما',
+      historyEmpty: 'هنوز تیکتی از این دستگاه ثبت نشده است.',
+      checkStatus: 'بررسی پاسخ',
+      refreshHistory: 'به‌روزرسانی سوابق',
     },
     feedback: {
       title: 'ثبت پیشنهاد و انتقاد',
@@ -398,6 +402,10 @@ export const translations = {
         in_progress: 'In Progress',
         resolved: 'Resolved',
       },
+      historyTitle: 'Your Ticket History',
+      historyEmpty: 'No tickets submitted from this device yet.',
+      checkStatus: 'Check Reply',
+      refreshHistory: 'Refresh History',
     },
     feedback: {
       title: 'Suggestions & Feedback',

@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { CheckCircle2, LifeBuoy, Search } from 'lucide-react';
+import { useState, useEffect, type FormEvent } from 'react';
+import { CheckCircle2, Clock, History, LifeBuoy, RefreshCw, Search } from 'lucide-react';
 import { useStudio } from '../context/StudioContext';
 import type { TicketStatus } from '../types/studio';
 
@@ -12,6 +12,17 @@ interface TrackedTicketResult {
   repliedAt: string | null;
   createdAt: string;
 }
+
+interface LocalTicketRecord {
+  trackingCode: string;
+  subject: string;
+  productName: string;
+  status: TicketStatus;
+  adminReply: string;
+  createdAt: string;
+}
+
+const STORAGE_KEY = 'tak1_my_tickets';
 
 export function SupportPage() {
   const { t, products, lang, navigate } = useStudio();
@@ -31,6 +42,35 @@ export function SupportPage() {
   const [trackedTicket, setTrackedTicket] = useState<TrackedTicketResult | null>(null);
   const [trackNotFound, setTrackNotFound] = useState(false);
 
+  const [myTickets, setMyTickets] = useState<LocalTicketRecord[]>([]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as LocalTicketRecord[];
+        if (Array.isArray(parsed)) {
+          setMyTickets(parsed);
+        }
+      }
+    } catch {
+      // Ignore
+    }
+  }, []);
+
+  const saveTicketToLocal = (newTicket: LocalTicketRecord) => {
+    setMyTickets((prev) => {
+      const filtered = prev.filter((item) => item.trackingCode !== newTicket.trackingCode);
+      const updated = [newTicket, ...filtered].slice(0, 15);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } catch {
+        // Ignore
+      }
+      return updated;
+    });
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -44,7 +84,19 @@ export function SupportPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Submission failed');
-      setCreatedCode(json.ticket.trackingCode);
+      const code = json.ticket.trackingCode;
+      setCreatedCode(code);
+
+      // Save to local history
+      saveTicketToLocal({
+        trackingCode: code,
+        subject: subject.trim(),
+        productName: productName.trim(),
+        status: 'open',
+        adminReply: '',
+        createdAt: new Date().toISOString(),
+      });
+
       setName('');
       setEmail('');
       setProductName('');
@@ -57,24 +109,68 @@ export function SupportPage() {
     }
   };
 
-  const handleTrack = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!trackCode.trim()) return;
+  const handleTrack = async (codeToTrack?: string) => {
+    const target = (codeToTrack ?? trackCode).trim();
+    if (!target) return;
     setTrackingLoading(true);
     setTrackNotFound(false);
     setTrackedTicket(null);
+    if (codeToTrack) setTrackCode(codeToTrack);
     try {
-      const res = await fetch(`/api/support/track/${encodeURIComponent(trackCode.trim())}`);
+      const res = await fetch(`/api/support/track/${encodeURIComponent(target)}`);
       if (!res.ok) {
         setTrackNotFound(true);
         return;
       }
       const json = await res.json();
       setTrackedTicket(json.ticket);
+
+      // Update local storage record status & adminReply if exists
+      setMyTickets((prev) => {
+        const updated = prev.map((item) =>
+          item.trackingCode === json.ticket.trackingCode
+            ? { ...item, status: json.ticket.status, adminReply: json.ticket.adminReply || '' }
+            : item,
+        );
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        } catch {
+          // Ignore
+        }
+        return updated;
+      });
     } catch {
       setTrackNotFound(true);
     } finally {
       setTrackingLoading(false);
+    }
+  };
+
+  const handleRefreshHistory = async () => {
+    if (myTickets.length === 0) return;
+    for (const item of myTickets) {
+      try {
+        const res = await fetch(`/api/support/track/${encodeURIComponent(item.trackingCode)}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.ticket) {
+            setMyTickets((prev) =>
+              prev.map((t) =>
+                t.trackingCode === json.ticket.trackingCode
+                  ? { ...t, status: json.ticket.status, adminReply: json.ticket.adminReply || '' }
+                  : t,
+              ),
+            );
+          }
+        }
+      } catch {
+        // Continue
+      }
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(myTickets));
+    } catch {
+      // Ignore
     }
   };
 
@@ -226,14 +322,20 @@ export function SupportPage() {
           </button>
         </form>
 
-        {/* Ticket Tracking Box */}
-        <div className="lg:col-span-5 surface-card rounded-2xl p-6 sm:p-8 space-y-5">
+        {/* Ticket Tracking & History Box (Matches CSS Selector 1) */}
+        <div className="lg:col-span-5 surface-card rounded-2xl p-6 sm:p-8 space-y-6">
           <div className="flex items-center gap-2.5 text-white">
             <Search className="h-5 w-5 text-[#D4AF37]" />
             <h2 className="text-lg font-bold">{t.support.trackTitle}</h2>
           </div>
 
-          <form onSubmit={handleTrack} className="flex gap-2">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleTrack();
+            }}
+            className="flex gap-2"
+          >
             <input
               type="text"
               value={trackCode}
@@ -277,6 +379,59 @@ export function SupportPage() {
               )}
             </div>
           )}
+
+          {/* Persistent Ticket History Section */}
+          <div className="pt-6 border-t border-white/10 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-white">
+                <History className="h-4 w-4 text-[#D4AF37]" />
+                <h3 className="text-sm font-bold">{t.support.historyTitle}</h3>
+              </div>
+              {myTickets.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void handleRefreshHistory()}
+                  className="inline-flex items-center gap-1.5 text-xs text-[#E5C158] hover:text-[#F8E59D] cursor-pointer"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  <span>{t.support.refreshHistory}</span>
+                </button>
+              )}
+            </div>
+
+            {myTickets.length === 0 ? (
+              <p className="text-xs text-slate-500 italic">{t.support.historyEmpty}</p>
+            ) : (
+              <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                {myTickets.map((item) => (
+                  <div
+                    key={item.trackingCode}
+                    onClick={() => void handleTrack(item.trackingCode)}
+                    className="rounded-xl border border-white/10 bg-[#070709] p-3.5 space-y-2 cursor-pointer hover:border-[#D4AF37]/50 transition"
+                  >
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-mono-tabular font-bold text-[#D4AF37]">
+                        {item.trackingCode}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-[11px] text-slate-300">
+                        <Clock className="h-3 w-3 text-slate-500" />
+                        {t.support.statusLabels[item.status]}
+                      </span>
+                    </div>
+                    <p className="text-xs font-semibold text-white truncate">{item.subject}</p>
+                    {item.adminReply ? (
+                      <p className="text-xs text-emerald-300 line-clamp-2">
+                        <span className="font-medium text-[#E5C158]">پاسخ: </span>
+                        {item.adminReply}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-500">{t.support.awaitingReply}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
