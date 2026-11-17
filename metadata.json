@@ -1,0 +1,8 @@
+{
+  "name": "TAK1 Game Studio",
+  "description": "وب‌سایت رسمی استودیوی توسعه بازی و نرم‌افزار TAK1 — معرفی تیم، انتشار بازی‌ها و اپلیکیشن‌ها، اخبار، پشتیبانی و پنل مدیریت (kalametgame.ir)",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

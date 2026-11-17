@@ -1,0 +1,85 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg-obsidian: #070709;
+  --bg-carbon: #0d0e12;
+  --bg-elevated: #14161d;
+  --border-hairline: rgba(226, 232, 240, 0.09);
+  --border-gold: rgba(212, 175, 55, 0.34);
+  --gold-primary: #d4af37;
+  --gold-bright: #f2cf66;
+  --silver-primary: #e2e8f0;
+  --silver-muted: #94a3b8;
+}
+
+@layer base {
+  html {
+    background-color: var(--bg-obsidian);
+    color: var(--silver-primary);
+    scroll-behavior: smooth;
+  }
+
+  html[lang="fa"] body {
+    font-family: "Vazirmatn", "Plus Jakarta Sans", system-ui, sans-serif;
+  }
+
+  html[lang="en"] body {
+    font-family: "Plus Jakarta Sans", "Vazirmatn", system-ui, sans-serif;
+  }
+
+  h1, h2, h3, .font-display {
+    text-wrap: balance;
+  }
+
+  html[lang="en"] h1,
+  html[lang="en"] h2,
+  html[lang="en"] .font-display {
+    font-family: "Outfit", "Vazirmatn", sans-serif;
+  }
+
+  .font-mono-tabular {
+    font-family: "JetBrains Mono", monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Custom metallic text gradient for focal headings */
+.text-metallic-gold {
+  background: linear-gradient(135deg, #f8e59d 0%, #d4af37 48%, #a67c1e 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.text-metallic-silver {
+  background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 55%, #7c8798 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.surface-card {
+  background-color: #0d0e12;
+  border: 1px solid rgba(226, 232, 240, 0.09);
+}
+
+.surface-card-hover {
+  transition: border-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.surface-card-hover:hover {
+  border-color: rgba(212, 175, 55, 0.42);
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surface-card-hover:hover {
+    transform: none;
+  }
+}
