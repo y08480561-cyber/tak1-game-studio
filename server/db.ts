@@ -530,6 +530,7 @@ export class StudioRepository {
       } catch (fetchErr: unknown) {
         clearTimeout(timeoutId);
         const errStr = String((fetchErr as Error)?.message || fetchErr);
+        console.error('[Supabase Health Check] Failed to reach Supabase URL:', url, errStr);
         const isTimeout = errStr.includes('aborted') || errStr.includes('timeout');
         return {
           configured: true,
