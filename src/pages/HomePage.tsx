@@ -33,16 +33,10 @@ export function HomePage() {
                   className="h-20 w-20 sm:h-24 sm:w-24 rounded-2xl border border-[#D4AF37]/35 bg-[#0a0b0e] object-contain p-1.5 shadow-lg shadow-black/60"
                 />
                 <div className="space-y-1">
-                  <p className="text-xs sm:text-sm font-medium text-[#E5C158] tracking-wide">
-                    {t.hero.kicker}
-                  </p>
                   <p className="font-display text-xl sm:text-2xl font-bold text-white tracking-tight">
                     {isRtl ? (
                       <>
-                        توسعه‌دهندگان بازی <span className="text-[#D4AF37]">تک۱</span>{' '}
-                        <span className="text-sm sm:text-base text-slate-400 font-normal">
-                          · TAK1 Game Studio
-                        </span>
+                        توسعه‌دهندگان بازی <span className="text-[#D4AF37]">تک۱</span>
                       </>
                     ) : (
                       <>

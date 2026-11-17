@@ -49,18 +49,12 @@ export function Navbar() {
               <span className="font-display text-sm sm:text-base font-bold tracking-tight text-white">
                 توسعه‌دهندگان بازی <span className="text-[#D4AF37]">تک۱</span>
               </span>
-              <span className="text-[10px] font-medium text-slate-400 tracking-wide">
-                TAK1 Game Studio
-              </span>
             </span>
           ) : (
             <span className="flex flex-col leading-tight">
               <span className="font-display text-base sm:text-lg font-bold tracking-tight text-white">
                 TAK<span className="text-[#D4AF37]">1</span>{' '}
                 <span className="text-sm font-medium text-slate-300">Game Studio</span>
-              </span>
-              <span className="text-[10px] font-medium text-slate-400">
-                توسعه‌دهندگان بازی تک۱
               </span>
             </span>
           )}

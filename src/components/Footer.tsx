@@ -49,55 +49,9 @@ export function Footer() {
             <p className="max-w-md text-sm leading-relaxed text-slate-400">
               {studioTagline}
             </p>
-            {siteSettings?.socialLinks &&
-              Object.values(siteSettings.socialLinks).some((v) => Boolean(v)) && (
-                <div className="flex flex-wrap items-center gap-3 pt-1 text-xs">
-                  {siteSettings.socialLinks.telegram && (
-                    <a
-                      href={siteSettings.socialLinks.telegram}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-slate-400 hover:text-[#F2CF66] transition-colors"
-                    >
-                      Telegram
-                    </a>
-                  )}
-                  {siteSettings.socialLinks.instagram && (
-                    <a
-                      href={siteSettings.socialLinks.instagram}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-slate-400 hover:text-[#F2CF66] transition-colors"
-                    >
-                      Instagram
-                    </a>
-                  )}
-                  {siteSettings.socialLinks.discord && (
-                    <a
-                      href={siteSettings.socialLinks.discord}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-slate-400 hover:text-[#F2CF66] transition-colors"
-                    >
-                      Discord
-                    </a>
-                  )}
-                  {siteSettings.socialLinks.github && (
-                    <a
-                      href={siteSettings.socialLinks.github}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-slate-400 hover:text-[#F2CF66] transition-colors"
-                    >
-                      GitHub
-                    </a>
-                  )}
-                </div>
-              )}
           </div>
 
           <div className="md:col-span-3 space-y-3">
-            <h3 className="text-sm font-semibold text-white">{t.footer.pagesHeading}</h3>
             <ul className="space-y-2 text-sm">
               {studioLinks.map((item) => (
                 <li key={item.to}>
@@ -139,7 +93,6 @@ export function Footer() {
 
         <div className="mt-10 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
           <p>{t.footer.copyright}</p>
-          <span className="font-mono-tabular text-slate-500">kalametgame.ir</span>
         </div>
       </div>
     </footer>

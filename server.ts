@@ -70,8 +70,10 @@ const authLimiter = createRateLimiter('admin-auth', 12, 15 * 60 * 1000);
 const publicSubmitLimiter = createRateLimiter('public-submit', 15, 10 * 60 * 1000);
 const trackLimiter = createRateLimiter('ticket-track', 40, 5 * 60 * 1000);
 
+const ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+
 function assertValidUuid(id: string): void {
-  if (!UUID_RE.test(String(id ?? '').trim())) {
+  if (!ID_RE.test(String(id ?? '').trim())) {
     throw new HttpError(400, 'Invalid record identifier format.', 'INVALID_UUID');
   }
 }
