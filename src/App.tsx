@@ -12,6 +12,7 @@ import { FeedbackPage } from './pages/FeedbackPage';
 import { ContactPage } from './pages/ContactPage';
 import { AdminPage } from './pages/AdminPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { SupportBubble } from './components/SupportBubble';
 
 function StudioRouter() {
   const { path, lang, siteSettings } = useStudio();
@@ -62,6 +63,7 @@ function StudioRouter() {
       <Navbar />
       <main className="flex-1">{content}</main>
       <Footer />
+      <SupportBubble />
     </div>
   );
 }
