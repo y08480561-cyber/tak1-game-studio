@@ -14,7 +14,6 @@ export function Footer() {
     { to: '/support', label: t.nav.support },
     { to: '/feedback', label: t.nav.feedback },
     { to: '/contact', label: t.nav.contact },
-    { to: '/admin', label: t.nav.admin },
   ];
 
   return (

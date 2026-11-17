@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, ExternalLink, Gamepad2, LifeBuoy, MessageSquarePlus, Newspaper } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ExternalLink, Gamepad2, LifeBuoy, MessageSquarePlus } from 'lucide-react';
 import { useStudio } from '../context/StudioContext';
 import { SafeMedia } from '../components/SafeMedia';
 
@@ -191,26 +191,7 @@ export function HomePage() {
             </button>
           </div>
 
-          {latestNews.length === 0 ? (
-            <div className="surface-card rounded-xl p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
-              <div className="flex items-start gap-4">
-                <div className="h-11 w-11 rounded-lg border border-white/10 bg-white/5 flex items-center justify-center text-[#D4AF37] shrink-0">
-                  <Newspaper className="h-5 w-5" />
-                </div>
-                <div className="space-y-1">
-                  <h3 className="text-base font-semibold text-white">{t.homeSections.emptyNewsTitle}</h3>
-                  <p className="text-sm text-slate-400">{t.homeSections.emptyNewsDesc}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => navigate('/news')}
-                className="px-4 py-2 rounded-lg border border-white/15 text-xs font-medium text-slate-200 hover:border-[#D4AF37]/50 whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                {t.homeSections.viewAllNews}
-              </button>
-            </div>
-          ) : (
+          {latestNews.length > 0 ? (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
               {latestNews.map((post) => {
                 const title = isRtl ? post.titleFa : post.titleEn;
@@ -241,7 +222,7 @@ export function HomePage() {
                 );
               })}
             </div>
-          )}
+          ) : null}
         </div>
       </section>
 
