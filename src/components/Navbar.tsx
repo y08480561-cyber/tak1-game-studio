@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Menu, X } from 'lucide-react';
 import { useStudio } from '../context/StudioContext';
+import { StudioAudioPlayer } from './StudioAudioPlayer';
 
 export function Navbar() {
   const { lang, path, navigate, toggleLang, t } = useStudio();
@@ -86,6 +87,8 @@ export function Navbar() {
 
         {/* Zone 3: 1 primary action + Mobile Drawer Trigger */}
         <div className="flex items-center gap-3 shrink-0">
+          <StudioAudioPlayer />
+
           <button
             type="button"
             onClick={toggleLang}
