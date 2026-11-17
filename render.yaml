@@ -11,6 +11,8 @@ services:
         value: production
       - key: PORT
         value: 3000
+      - key: NODE_OPTIONS
+        value: --dns-result-order=ipv4first
       - key: SESSION_SECRET
         generateValue: true
       - key: SUPABASE_URL

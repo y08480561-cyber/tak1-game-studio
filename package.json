@@ -7,8 +7,8 @@
     "node": ">=20.11.0"
   },
   "scripts": {
-    "dev": "tsx server.ts",
-    "start": "NODE_ENV=production tsx server.ts",
+    "dev": "tsx --dns-result-order=ipv4first server.ts",
+    "start": "NODE_ENV=production tsx --dns-result-order=ipv4first server.ts",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",

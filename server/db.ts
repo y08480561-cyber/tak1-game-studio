@@ -1,3 +1,9 @@
+import dns from 'node:dns';
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch {
+  // Ignore fallback
+}
 import crypto from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type {
@@ -507,11 +513,11 @@ export class StudioRepository {
       const { url, serviceRoleKey } = getSupabaseEnv();
       const sb = getSupabaseAdminClient();
 
-      // Step 0: Low-level fetch reachability check with 6s timeout to diagnose DNS/TLS/paused project issues
+      // Step 0: Direct PostgREST reachability probe with 8s timeout to diagnose DNS/network issues
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
       try {
-        const res = await fetch(`${url}/auth/v1/health`, {
+        const probeRes = await fetch(`${url}/rest/v1/`, {
           headers: {
             apikey: serviceRoleKey,
             Authorization: `Bearer ${serviceRoleKey}`,
@@ -519,7 +525,7 @@ export class StudioRepository {
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
-        if (!res.ok && res.status >= 500) {
+        if (probeRes.status >= 500) {
           return {
             configured: true,
             connected: false,
@@ -527,14 +533,15 @@ export class StudioRepository {
             storageReady: false,
             missingVars: [],
             missingTables: [],
-            error: `Supabase API returned HTTP ${res.status}. Your Supabase project at ${url} may be paused or experiencing downtime. Please check your Supabase Dashboard.`,
+            error: `Supabase API returned HTTP ${probeRes.status}. Your Supabase project at ${url} may be paused or experiencing downtime. Please check your Supabase Dashboard.`,
           };
         }
       } catch (fetchErr: unknown) {
         clearTimeout(timeoutId);
-        const errStr = String((fetchErr as Error)?.message || fetchErr);
-        console.error('[Supabase Health Check] Failed to reach Supabase URL:', url, errStr);
-        const isTimeout = errStr.includes('aborted') || errStr.includes('timeout');
+        const errObj = fetchErr as Error & { cause?: { code?: string; message?: string } };
+        const causeMsg = errObj?.cause?.message || errObj?.cause?.code || errObj?.message || 'Unknown network error';
+        console.error('[Supabase Reachability Check] Failed to reach Supabase URL:', url, causeMsg);
+        const isTimeout = String(causeMsg).includes('aborted') || String(causeMsg).includes('timeout');
         return {
           configured: true,
           connected: false,
@@ -543,8 +550,8 @@ export class StudioRepository {
           missingVars: [],
           missingTables: [],
           error: isTimeout
-            ? `Connection to Supabase at ${url} timed out after 6 seconds. The project might be paused or DNS is unreachable from Render.`
-            : `Unable to reach Supabase API at SUPABASE_URL (${errStr}). Verify that your Supabase project is active (not paused) and SUPABASE_URL is correct.`,
+            ? `Connection to Supabase at ${url} timed out after 8 seconds. The project might be paused or DNS is unreachable from Render.`
+            : `Unable to reach Supabase API at SUPABASE_URL (${causeMsg}). Verify that your Supabase project is active (not paused) and SUPABASE_URL is correct.`,
         };
       }
 

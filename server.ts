@@ -1,3 +1,9 @@
+import dns from 'node:dns';
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch {
+  // Fallback for runtimes where setDefaultResultOrder is not supported
+}
 import 'dotenv/config';
 import path from 'node:path';
 import fs from 'node:fs';
