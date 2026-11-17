@@ -258,7 +258,10 @@ as $$
     where a.is_active = true
       and (
         a.auth_user_id = auth.uid()
-        or lower(a.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+        or (
+          auth.uid() is not null
+          and lower(a.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+        )
       )
   );
 $$;
@@ -277,7 +280,32 @@ as $$
       and a.role in ('super_admin', 'admin')
       and (
         a.auth_user_id = auth.uid()
-        or lower(a.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+        or (
+          auth.uid() is not null
+          and lower(a.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+        )
+      )
+  );
+$$;
+
+create or replace function public.is_super_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.admin_users a
+    where a.is_active = true
+      and a.role = 'super_admin'
+      and (
+        a.auth_user_id = auth.uid()
+        or (
+          auth.uid() is not null
+          and lower(a.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+        )
       )
   );
 $$;
@@ -405,7 +433,7 @@ create policy "Admins manage contact messages"
   using (public.is_studio_admin())
   with check (public.is_studio_admin());
 
--- Admin Users (Zero public access; Admins read, Super Admins / Admins manage)
+-- Admin Users (Zero public access; Admins read, Super Admins ONLY manage)
 drop policy if exists "Admins read admin_users" on public.admin_users;
 create policy "Admins read admin_users"
   on public.admin_users for select
@@ -416,8 +444,8 @@ drop policy if exists "Super admins manage admin_users" on public.admin_users;
 create policy "Super admins manage admin_users"
   on public.admin_users for all
   to authenticated
-  using (public.is_super_or_admin())
-  with check (public.is_super_or_admin());
+  using (public.is_super_admin())
+  with check (public.is_super_admin());
 
 -- ============================================================================
 -- 14. Supabase Storage Bucket for Studio Media (Icons, Screenshots, Covers, Avatars)
@@ -430,7 +458,10 @@ values (
   5242880,
   array['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml']
 )
-on conflict (id) do nothing;
+on conflict (id) do update
+set public = excluded.public,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
 
 drop policy if exists "Public read studio-media" on storage.objects;
 create policy "Public read studio-media"
@@ -468,7 +499,7 @@ grant select on public.products, public.news, public.team_members, public.site_s
 grant insert on public.support_tickets, public.suggestions, public.contact_messages to anon, authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant usage, select on all sequences in schema public to authenticated;
-grant execute on function public.is_studio_admin(), public.is_super_or_admin() to anon, authenticated, service_role;
+grant execute on function public.is_studio_admin(), public.is_super_or_admin(), public.is_super_admin() to anon, authenticated, service_role;
 
 notify pgrst, 'reload schema';
 

@@ -8,6 +8,7 @@ import {
   EyeOff,
   Gamepad2,
   Globe,
+  Image as ImageIcon,
   Inbox,
   LifeBuoy,
   LogOut,
@@ -34,6 +35,7 @@ import type {
   Product,
   ProductCategory,
   SiteSettings,
+  StorageMediaItem,
   Suggestion,
   SuggestionStatus,
   SupportTicket,
@@ -47,6 +49,7 @@ type AdminTab =
   | 'products'
   | 'news'
   | 'team'
+  | 'media'
   | 'tickets'
   | 'suggestions'
   | 'messages'
@@ -83,11 +86,18 @@ export function AdminPage() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [messages, setMessages] = useState<ContactMessage[]>([]);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [mediaItems, setMediaItems] = useState<StorageMediaItem[]>([]);
   const [siteSettings, setSiteSettings] = useState<SiteSettings | null>(null);
 
   const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [uploadingField, setUploadingField] = useState<string | null>(null);
+  const [savingProduct, setSavingProduct] = useState(false);
+  const [savingNews, setSavingNews] = useState(false);
+  const [savingTeam, setSavingTeam] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [savingAdmin, setSavingAdmin] = useState(false);
+  const [deletingMediaPath, setDeletingMediaPath] = useState<string | null>(null);
 
   // Search & Filter states across tabs
   const [prodQuery, setProdQuery] = useState('');
@@ -215,15 +225,15 @@ export function AdminPage() {
         fetch('/api/admin/suggestions'),
         fetch('/api/admin/messages'),
         fetch('/api/admin/settings'),
+        fetch('/api/admin/media'),
       ];
 
-      const canManageAdmins =
-        session?.adminRole === 'super_admin' || session?.adminRole === 'admin';
+      const canManageAdmins = session?.adminRole === 'super_admin';
       if (canManageAdmins) {
         requests.push(fetch('/api/admin/users'));
       }
 
-      const [ovRes, prodRes, newsRes, teamRes, tickRes, sugRes, msgRes, setRes, usersRes] =
+      const [ovRes, prodRes, newsRes, teamRes, tickRes, sugRes, msgRes, setRes, mediaRes, usersRes] =
         await Promise.all(requests);
 
       if (ovRes.ok) setOverview((await ovRes.json()).stats);
@@ -261,6 +271,9 @@ export function AdminPage() {
         setSInstagram(s.socialLinks?.instagram ?? '');
         setSDiscord(s.socialLinks?.discord ?? '');
         setSGithub(s.socialLinks?.github ?? '');
+      }
+      if (mediaRes.ok) {
+        setMediaItems((await mediaRes.json()).items ?? []);
       }
       if (usersRes && usersRes.ok) {
         setAdminUsers((await usersRes.json()).items ?? []);
@@ -416,45 +429,51 @@ export function AdminPage() {
 
   const handleProductSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const payload = {
-      titleFa: pTitleFa,
-      titleEn: pTitleEn,
-      slug: pSlug,
-      category: pCategory,
-      version: pVersion,
-      releaseDate: pReleaseDate,
-      shortDescFa: pShortFa,
-      shortDescEn: pShortEn,
-      fullDescFa: pFullFa,
-      fullDescEn: pFullEn,
-      iconUrl: pIconUrl,
-      screenshots: pScreenshots,
-      links: {
-        myket: pMyket || undefined,
-        bazaar: pBazaar || undefined,
-        googlePlay: pGooglePlay || undefined,
-        direct: pDirect || undefined,
-      },
-      featured: pFeatured,
-      published: pPublished,
-    };
+    if (savingProduct) return;
+    setSavingProduct(true);
+    try {
+      const payload = {
+        titleFa: pTitleFa,
+        titleEn: pTitleEn,
+        slug: pSlug,
+        category: pCategory,
+        version: pVersion,
+        releaseDate: pReleaseDate,
+        shortDescFa: pShortFa,
+        shortDescEn: pShortEn,
+        fullDescFa: pFullFa,
+        fullDescEn: pFullEn,
+        iconUrl: pIconUrl,
+        screenshots: pScreenshots,
+        links: {
+          myket: pMyket || undefined,
+          bazaar: pBazaar || undefined,
+          googlePlay: pGooglePlay || undefined,
+          direct: pDirect || undefined,
+        },
+        featured: pFeatured,
+        published: pPublished,
+      };
 
-    const url = editingProductId ? `/api/admin/products/${editingProductId}` : '/api/admin/products';
-    const method = editingProductId ? 'PUT' : 'POST';
+      const url = editingProductId ? `/api/admin/products/${editingProductId}` : '/api/admin/products';
+      const method = editingProductId ? 'PUT' : 'POST';
 
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      flashError(json.error || 'Failed to save product');
-      return;
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        flashError(json.error || 'Failed to save product');
+        return;
+      }
+      resetProductForm();
+      await Promise.all([loadAdminData(), refreshPublicData()]);
+      flash(isFa ? 'محصول با موفقیت در Supabase ذخیره شد.' : 'Product saved to Supabase.');
+    } finally {
+      setSavingProduct(false);
     }
-    resetProductForm();
-    await Promise.all([loadAdminData(), refreshPublicData()]);
-    flash(isFa ? 'محصول با موفقیت در Supabase ذخیره شد.' : 'Product saved to Supabase.');
   };
 
   const handleToggleProductPublish = async (p: Product) => {
@@ -507,32 +526,38 @@ export function AdminPage() {
 
   const handleNewsSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const payload = {
-      titleFa: nTitleFa,
-      titleEn: nTitleEn,
-      category: nCategory,
-      summaryFa: nSummaryFa,
-      summaryEn: nSummaryEn,
-      contentFa: nContentFa,
-      contentEn: nContentEn,
-      coverUrl: nCoverUrl,
-      published: nPublished,
-    };
-    const url = editingNewsId ? `/api/admin/news/${editingNewsId}` : '/api/admin/news';
-    const method = editingNewsId ? 'PUT' : 'POST';
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      flashError(json.error || 'Failed to save news');
-      return;
+    if (savingNews) return;
+    setSavingNews(true);
+    try {
+      const payload = {
+        titleFa: nTitleFa,
+        titleEn: nTitleEn,
+        category: nCategory,
+        summaryFa: nSummaryFa,
+        summaryEn: nSummaryEn,
+        contentFa: nContentFa,
+        contentEn: nContentEn,
+        coverUrl: nCoverUrl,
+        published: nPublished,
+      };
+      const url = editingNewsId ? `/api/admin/news/${editingNewsId}` : '/api/admin/news';
+      const method = editingNewsId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        flashError(json.error || 'Failed to save news');
+        return;
+      }
+      resetNewsForm();
+      await Promise.all([loadAdminData(), refreshPublicData()]);
+      flash(isFa ? 'خبر در Supabase ذخیره شد.' : 'News dispatch saved.');
+    } finally {
+      setSavingNews(false);
     }
-    resetNewsForm();
-    await Promise.all([loadAdminData(), refreshPublicData()]);
-    flash(isFa ? 'خبر در Supabase ذخیره شد.' : 'News dispatch saved.');
   };
 
   const handleToggleNewsPublish = async (post: NewsPost) => {
@@ -583,32 +608,38 @@ export function AdminPage() {
 
   const handleTeamSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const payload = {
-      nameFa: mNameFa,
-      nameEn: mNameEn,
-      roleFa: mRoleFa,
-      roleEn: mRoleEn,
-      bioFa: mBioFa,
-      bioEn: mBioEn,
-      avatarUrl: mAvatarUrl,
-      sortOrder: mSortOrder,
-      published: mPublished,
-    };
-    const url = editingTeamId ? `/api/admin/team/${editingTeamId}` : '/api/admin/team';
-    const method = editingTeamId ? 'PUT' : 'POST';
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      flashError(json.error || 'Failed to save team member');
-      return;
+    if (savingTeam) return;
+    setSavingTeam(true);
+    try {
+      const payload = {
+        nameFa: mNameFa,
+        nameEn: mNameEn,
+        roleFa: mRoleFa,
+        roleEn: mRoleEn,
+        bioFa: mBioFa,
+        bioEn: mBioEn,
+        avatarUrl: mAvatarUrl,
+        sortOrder: mSortOrder,
+        published: mPublished,
+      };
+      const url = editingTeamId ? `/api/admin/team/${editingTeamId}` : '/api/admin/team';
+      const method = editingTeamId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        flashError(json.error || 'Failed to save team member');
+        return;
+      }
+      resetTeamForm();
+      await Promise.all([loadAdminData(), refreshPublicData()]);
+      flash(isFa ? 'اطلاعات عضو تیم ذخیره شد.' : 'Team member saved.');
+    } finally {
+      setSavingTeam(false);
     }
-    resetTeamForm();
-    await Promise.all([loadAdminData(), refreshPublicData()]);
-    flash(isFa ? 'اطلاعات عضو تیم ذخیره شد.' : 'Team member saved.');
   };
 
   const handleToggleTeamPublish = async (member: TeamMember) => {
@@ -694,60 +725,94 @@ export function AdminPage() {
   // ---- Site Settings ----
   const handleSaveSettings = async (e: FormEvent) => {
     e.preventDefault();
-    const res = await fetch('/api/admin/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        studioNameFa: sNameFa,
-        studioNameEn: sNameEn,
-        taglineFa: sTaglineFa,
-        taglineEn: sTaglineEn,
-        contactEmail: sEmail,
-        officialDomain: sDomain,
-        announcementFa: sAnnFa,
-        announcementEn: sAnnEn,
-        maintenanceMode: sMaint,
-        socialLinks: {
-          telegram: sTelegram || undefined,
-          instagram: sInstagram || undefined,
-          discord: sDiscord || undefined,
-          github: sGithub || undefined,
-        },
-      }),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      flashError(json.error || 'Failed to save site settings');
-      return;
+    if (savingSettings) return;
+    setSavingSettings(true);
+    try {
+      const res = await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studioNameFa: sNameFa,
+          studioNameEn: sNameEn,
+          taglineFa: sTaglineFa,
+          taglineEn: sTaglineEn,
+          contactEmail: sEmail,
+          officialDomain: sDomain,
+          announcementFa: sAnnFa,
+          announcementEn: sAnnEn,
+          maintenanceMode: sMaint,
+          socialLinks: {
+            telegram: sTelegram || undefined,
+            instagram: sInstagram || undefined,
+            discord: sDiscord || undefined,
+            github: sGithub || undefined,
+          },
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        flashError(json.error || 'Failed to save site settings');
+        return;
+      }
+      await Promise.all([loadAdminData(), refreshPublicData()]);
+      flash(isFa ? 'تنظیمات عمومی سایت ذخیره شد.' : 'Site settings updated.');
+    } finally {
+      setSavingSettings(false);
     }
-    await Promise.all([loadAdminData(), refreshPublicData()]);
-    flash(isFa ? 'تنظیمات عمومی سایت ذخیره شد.' : 'Site settings updated.');
+  };
+
+  // ---- Media Deletion ----
+  const handleDeleteMedia = async (filePath: string) => {
+    if (deletingMediaPath) return;
+    setDeletingMediaPath(filePath);
+    try {
+      const res = await fetch('/api/admin/media', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: filePath }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        flashError(json.error || 'Failed to delete storage file');
+        return;
+      }
+      await loadAdminData();
+      flash(isFa ? 'فایل از Supabase Storage حذف شد.' : 'Media deleted from Storage.');
+    } finally {
+      setDeletingMediaPath(null);
+    }
   };
 
   // ---- Admin Users ----
   const handleCreateAdminUser = async (e: FormEvent) => {
     e.preventDefault();
-    const res = await fetch('/api/admin/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: newAdminEmail,
-        displayName: newAdminName,
-        password: newAdminPassword,
-        role: newAdminRole,
-      }),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      flashError(json.error || 'Failed to create admin user');
-      return;
+    if (savingAdmin) return;
+    setSavingAdmin(true);
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: newAdminEmail,
+          displayName: newAdminName,
+          password: newAdminPassword,
+          role: newAdminRole,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        flashError(json.error || 'Failed to create admin user');
+        return;
+      }
+      setNewAdminEmail('');
+      setNewAdminName('');
+      setNewAdminPassword('');
+      setNewAdminRole('editor');
+      await loadAdminData();
+      flash(isFa ? 'مدیر جدید در Supabase Auth ایجاد شد.' : 'Admin account created.');
+    } finally {
+      setSavingAdmin(false);
     }
-    setNewAdminEmail('');
-    setNewAdminName('');
-    setNewAdminPassword('');
-    setNewAdminRole('editor');
-    await loadAdminData();
-    flash(isFa ? 'مدیر جدید در Supabase Auth ایجاد شد.' : 'Admin account created.');
   };
 
   const handleToggleAdminActive = async (u: AdminUser) => {
@@ -1048,22 +1113,24 @@ export function AdminPage() {
     );
   }
 
-  const canManageAdminSettings =
+  const canManageSettings =
     session.adminRole === 'super_admin' || session.adminRole === 'admin';
+  const canManageAdmins = session.adminRole === 'super_admin';
 
   const tabs: { id: AdminTab; label: string; icon: typeof BarChart3 }[] = [
     { id: 'overview', label: t.admin.tabs.overview, icon: BarChart3 },
     { id: 'products', label: t.admin.tabs.products, icon: Gamepad2 },
     { id: 'news', label: t.admin.tabs.news, icon: Newspaper },
     { id: 'team', label: t.admin.tabs.team, icon: Users },
+    { id: 'media', label: isFa ? 'رسانه‌ها' : 'Media', icon: ImageIcon },
     { id: 'tickets', label: t.admin.tabs.tickets, icon: LifeBuoy },
     { id: 'suggestions', label: t.admin.tabs.suggestions, icon: MessageSquarePlus },
     { id: 'messages', label: t.admin.tabs.messages, icon: Inbox },
-    ...(canManageAdminSettings
-      ? [
-          { id: 'settings' as AdminTab, label: t.admin.tabs.settings, icon: Settings },
-          { id: 'admins' as AdminTab, label: t.admin.tabs.admins, icon: UserCog },
-        ]
+    ...(canManageSettings
+      ? [{ id: 'settings' as AdminTab, label: t.admin.tabs.settings, icon: Settings }]
+      : []),
+    ...(canManageAdmins
+      ? [{ id: 'admins' as AdminTab, label: t.admin.tabs.admins, icon: UserCog }]
       : []),
   ];
 
@@ -1201,16 +1268,26 @@ export function AdminPage() {
 
           <div className="surface-card rounded-xl p-6 flex items-start gap-4">
             <Database className="h-5 w-5 text-[#D4AF37] shrink-0 mt-0.5" />
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <h2 className="text-sm font-semibold text-white">
                 {isFa
-                  ? 'وضعیت اتصال زنده به Supabase PostgreSQL و Auth'
-                  : 'Live Supabase PostgreSQL & Auth Status'}
+                  ? 'وضعیت اتصال زنده به Supabase PostgreSQL، Auth و Storage'
+                  : 'Live Supabase PostgreSQL, Auth & Storage Status'}
               </h2>
               <p className="text-xs leading-relaxed text-slate-400">
                 {isFa
                   ? 'تمامی عملیات محصولات، اخبار، تیم، تیکت‌ها، پیشنهادها، تنظیمات و بارگذاری تصاویر مستقیماً در پایگاه داده و فضای ذخیره‌سازی Supabase ثبت می‌شوند.'
                   : 'All catalog items, dispatches, team profiles, tickets, feedback, settings, and media uploads persist directly in Supabase PostgreSQL & Storage.'}
+              </p>
+              <p className="font-mono-tabular text-[11px] text-slate-300">
+                Storage (studio-media):{' '}
+                <span className={sbStatus?.storageReady ? 'text-emerald-300' : 'text-amber-300'}>
+                  {sbStatus?.storageReady
+                    ? isFa
+                      ? 'آماده و متصل'
+                      : 'Ready'
+                    : sbStatus?.storageError || (isFa ? 'نیازمند بررسی باکت' : 'Bucket unavailable')}
+                </span>
               </p>
             </div>
           </div>
@@ -1498,17 +1575,22 @@ export function AdminPage() {
 
             <button
               type="submit"
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-sm font-semibold hover:brightness-110 cursor-pointer"
+              disabled={savingProduct}
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-sm font-semibold hover:brightness-110 disabled:opacity-60 cursor-pointer"
             >
               <Plus className="h-4 w-4" />
               <span>
-                {editingProductId
+                {savingProduct
                   ? isFa
-                    ? 'ذخیره تغییرات'
-                    : 'Save Changes'
-                  : isFa
-                    ? 'ثبت محصول'
-                    : 'Create Product'}
+                    ? 'در حال ذخیره...'
+                    : 'Saving...'
+                  : editingProductId
+                    ? isFa
+                      ? 'ذخیره تغییرات'
+                      : 'Save Changes'
+                    : isFa
+                      ? 'ثبت محصول'
+                      : 'Create Product'}
               </span>
             </button>
           </form>
@@ -1752,9 +1834,20 @@ export function AdminPage() {
             <div>
               <button
                 type="submit"
-                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-sm font-semibold hover:brightness-110 cursor-pointer"
+                disabled={savingNews}
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-sm font-semibold hover:brightness-110 disabled:opacity-60 cursor-pointer"
               >
-                {editingNewsId ? (isFa ? 'به‌روزرسانی' : 'Update') : isFa ? 'ذخیره خبر' : 'Save News'}
+                {savingNews
+                  ? isFa
+                    ? 'در حال ذخیره...'
+                    : 'Saving...'
+                  : editingNewsId
+                    ? isFa
+                      ? 'به‌روزرسانی'
+                      : 'Update'
+                    : isFa
+                      ? 'ذخیره خبر'
+                      : 'Save News'}
               </button>
             </div>
           </form>
@@ -1977,9 +2070,20 @@ export function AdminPage() {
             </div>
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-sm font-semibold hover:brightness-110 cursor-pointer"
+              disabled={savingTeam}
+              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-sm font-semibold hover:brightness-110 disabled:opacity-60 cursor-pointer"
             >
-              {editingTeamId ? (isFa ? 'ذخیره تغییرات' : 'Save Member') : isFa ? 'افزودن به تیم' : 'Add Member'}
+              {savingTeam
+                ? isFa
+                  ? 'در حال ذخیره...'
+                  : 'Saving...'
+                : editingTeamId
+                  ? isFa
+                    ? 'ذخیره تغییرات'
+                    : 'Save Member'
+                  : isFa
+                    ? 'افزودن به تیم'
+                    : 'Add Member'}
             </button>
           </form>
 
@@ -2324,8 +2428,85 @@ export function AdminPage() {
         </div>
       )}
 
+      {/* TAB: Supabase Storage Media Library */}
+      {activeTab === 'media' && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="text-base font-bold text-white">
+                {isFa ? 'فایل‌های رسانه‌ای باکت studio-media' : 'Supabase Storage Media Library (studio-media)'}
+              </h2>
+              <p className="text-xs text-slate-400">
+                {isFa
+                  ? 'تصاویر بارگذاری‌شده در Supabase Storage را بررسی یا فایل‌های اضافی را حذف کنید.'
+                  : 'Inspect uploaded assets in Supabase Storage or remove unused files.'}
+              </p>
+            </div>
+            <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-xs font-semibold hover:brightness-110 cursor-pointer">
+              <Upload className="h-3.5 w-3.5" />
+              <span>
+                {uploadingField === 'library'
+                  ? isFa
+                    ? 'در حال آپلود...'
+                    : 'Uploading...'
+                  : isFa
+                    ? 'آپلود تصویر جدید'
+                    : 'Upload Image'}
+              </span>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!file) return;
+                  const url = await uploadToSupabaseStorage(file, 'general', 'library');
+                  if (url) {
+                    await loadAdminData();
+                    flash(isFa ? 'تصویر جدید بارگذاری شد.' : 'Image uploaded to Storage.');
+                  }
+                }}
+              />
+            </label>
+          </div>
+
+          {mediaItems.length === 0 ? (
+            <div className="surface-card rounded-xl p-8 text-center text-sm text-slate-400">
+              {isFa ? 'هنوز فایلی در باکت studio-media ذخیره نشده است.' : 'No files found in studio-media bucket.'}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {mediaItems.map((m) => (
+                <div key={m.path} className="surface-card rounded-xl overflow-hidden flex flex-col justify-between">
+                  <SafeMedia src={m.url} alt={m.name} className="h-36 w-full object-cover bg-[#070709] border-b border-white/10" />
+                  <div className="p-3 space-y-2">
+                    <p className="font-mono-tabular text-[11px] text-[#D4AF37] truncate">{m.folder}</p>
+                    <p className="font-mono-tabular text-xs text-white truncate">{m.name}</p>
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <span className="font-mono-tabular text-[10px] text-slate-400">
+                        {m.size ? `${Math.round(m.size / 1024)} KB` : '—'}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={deletingMediaPath === m.path}
+                        onClick={() => void handleDeleteMedia(m.path)}
+                        className="h-7 w-7 rounded-lg border border-white/10 flex items-center justify-center text-red-400 hover:bg-red-500/15 disabled:opacity-50 cursor-pointer"
+                        title={isFa ? 'حذف فایل' : 'Delete file'}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* TAB 8: General Site Settings */}
-      {activeTab === 'settings' && canManageAdminSettings && (
+      {activeTab === 'settings' && canManageSettings && (
         <form onSubmit={handleSaveSettings} className="surface-card rounded-2xl p-6 sm:p-8 space-y-6 max-w-4xl">
           <div className="flex items-center gap-3 border-b border-white/10 pb-4">
             <Globe className="h-5 w-5 text-[#D4AF37]" />
@@ -2461,16 +2642,23 @@ export function AdminPage() {
           <div>
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-sm font-semibold hover:brightness-110 cursor-pointer"
+              disabled={savingSettings}
+              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-sm font-semibold hover:brightness-110 disabled:opacity-60 cursor-pointer"
             >
-              {isFa ? 'ذخیره تنظیمات در Supabase' : 'Save Site Settings'}
+              {savingSettings
+                ? isFa
+                  ? 'در حال ذخیره...'
+                  : 'Saving...'
+                : isFa
+                  ? 'ذخیره تنظیمات در Supabase'
+                  : 'Save Site Settings'}
             </button>
           </div>
         </form>
       )}
 
-      {/* TAB 9: Admin Users & Roles */}
-      {activeTab === 'admins' && canManageAdminSettings && (
+      {/* TAB 9: Admin Users & Roles (super_admin ONLY) */}
+      {activeTab === 'admins' && canManageAdmins && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           <form
             onSubmit={handleCreateAdminUser}
@@ -2524,9 +2712,16 @@ export function AdminPage() {
             </label>
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-sm font-semibold hover:brightness-110 cursor-pointer"
+              disabled={savingAdmin}
+              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#E8C563] to-[#C89B2B] text-[#070709] text-sm font-semibold hover:brightness-110 disabled:opacity-60 cursor-pointer"
             >
-              {isFa ? 'ساخت حساب مدیر' : 'Create Admin Account'}
+              {savingAdmin
+                ? isFa
+                  ? 'در حال ساخت...'
+                  : 'Creating...'
+                : isFa
+                  ? 'ساخت حساب مدیر'
+                  : 'Create Admin Account'}
             </button>
           </form>
 

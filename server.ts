@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import path from 'node:path';
 import fs from 'node:fs';
-import express, { type Response } from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import { HttpError, repo, toSafeHttpError } from './server/db.ts';
 import {
@@ -16,6 +16,68 @@ import type { AdminRole } from './src/types/studio.ts';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const ALLOWED_CORS_ORIGINS = new Set([
+  'https://kalametgame.ir',
+  'https://www.kalametgame.ir',
+  'https://tak1-game-studio.onrender.com',
+]);
+
+function isAllowedOrigin(origin: string): boolean {
+  if (ALLOWED_CORS_ORIGINS.has(origin)) return true;
+  if (/^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(origin)) return true;
+  if (/^https:\/\/[a-z0-9-]+\.run\.app$/i.test(origin)) return true;
+  return false;
+}
+
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function createRateLimiter(bucketName: string, maxRequests: number, windowMs: number) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const ip = String(req.ip || req.socket.remoteAddress || 'unknown');
+    const key = `${bucketName}:${ip}`;
+    const now = Date.now();
+    const current = rateBuckets.get(key);
+
+    if (!current || now > current.resetAt) {
+      rateBuckets.set(key, { count: 1, resetAt: now + windowMs });
+      next();
+      return;
+    }
+
+    if (current.count >= maxRequests) {
+      const retrySec = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
+      res.setHeader('Retry-After', String(retrySec));
+      res.status(429).json({
+        error: 'Too many requests. Please try again shortly.',
+        code: 'RATE_LIMITED',
+      });
+      return;
+    }
+
+    current.count += 1;
+    next();
+  };
+}
+
+const authLimiter = createRateLimiter('admin-auth', 12, 15 * 60 * 1000);
+const publicSubmitLimiter = createRateLimiter('public-submit', 15, 10 * 60 * 1000);
+const trackLimiter = createRateLimiter('ticket-track', 40, 5 * 60 * 1000);
+
+function assertValidUuid(id: string): void {
+  if (!UUID_RE.test(String(id ?? '').trim())) {
+    throw new HttpError(400, 'Invalid record identifier format.', 'INVALID_UUID');
+  }
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
 
 function sanitizeOptionalUrl(raw: unknown): string | undefined {
   const val = String(raw ?? '').trim();
@@ -49,16 +111,113 @@ async function startServer() {
   const port = Number(process.env.PORT || 3000);
 
   app.set('trust proxy', 1);
+  app.disable('x-powered-by');
+
+  // Canonical www -> non-www redirect ONLY for www.kalametgame.ir (never alters game.kalametgame.ir)
+  app.use((req, res, next) => {
+    const host = String(req.hostname || '').toLowerCase();
+    if (host === 'www.kalametgame.ir') {
+      res.redirect(301, `https://kalametgame.ir${req.originalUrl}`);
+      return;
+    }
+    next();
+  });
+
+  // Security headers & crawler directives
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    if (req.path.startsWith('/api/') || req.path === '/admin') {
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    }
+    next();
+  });
+
+  // Strict CORS policy
+  app.use('/api', (req, res, next) => {
+    const origin = String(req.headers.origin || '');
+    if (origin && isAllowedOrigin(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    }
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
+
   app.use(express.json({ limit: '10mb' }));
+
+  // ---- SEO: robots.txt & dynamic sitemap.xml ----
+  app.get('/robots.txt', (_req, res) => {
+    res.type('text/plain; charset=utf-8').send(
+      ['User-agent: *', 'Allow: /', 'Disallow: /admin', 'Disallow: /api/', '', 'Sitemap: https://kalametgame.ir/sitemap.xml'].join('\n'),
+    );
+  });
+
+  app.get('/sitemap.xml', async (_req, res) => {
+    type SitemapEntry = { loc: string; lastmod?: string; priority: string; changefreq: string };
+    const staticPages: SitemapEntry[] = [
+      { loc: 'https://kalametgame.ir/', priority: '1.0', changefreq: 'weekly' },
+      { loc: 'https://kalametgame.ir/products', priority: '0.9', changefreq: 'weekly' },
+      { loc: 'https://kalametgame.ir/team', priority: '0.8', changefreq: 'monthly' },
+      { loc: 'https://kalametgame.ir/news', priority: '0.8', changefreq: 'weekly' },
+      { loc: 'https://kalametgame.ir/support', priority: '0.7', changefreq: 'monthly' },
+      { loc: 'https://kalametgame.ir/feedback', priority: '0.6', changefreq: 'monthly' },
+      { loc: 'https://kalametgame.ir/contact', priority: '0.7', changefreq: 'monthly' },
+    ];
+
+    let dynamicProducts: SitemapEntry[] = [];
+    if (repo.storageMode === 'supabase') {
+      try {
+        const products = await repo.listProducts(false);
+        dynamicProducts = products.map((p) => ({
+          loc: `https://kalametgame.ir/products/${encodeURIComponent(p.slug)}`,
+          lastmod: p.updatedAt ? p.updatedAt.slice(0, 10) : undefined,
+          priority: '0.85',
+          changefreq: 'weekly',
+        }));
+      } catch {
+        dynamicProducts = [];
+      }
+    }
+
+    const entries: SitemapEntry[] = [...staticPages, ...dynamicProducts];
+    const xml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+      ...entries.map((e) => {
+        const lastmodTag = typeof e.lastmod === 'string' && e.lastmod ? `<lastmod>${escapeXml(e.lastmod)}</lastmod>` : '';
+        return `  <url><loc>${escapeXml(e.loc)}</loc>${lastmodTag}<changefreq>${e.changefreq}</changefreq><priority>${e.priority}</priority></url>`;
+      }),
+      '</urlset>',
+    ].join('\n');
+
+    res.type('application/xml; charset=utf-8').send(xml);
+  });
 
   // ---- Health & Real Supabase Connection Status ----
   app.get('/api/health', async (_req, res) => {
     const supabaseStatus = await repo.checkSupabaseStatus();
+    const ok = Boolean(supabaseStatus.connected && supabaseStatus.schemaReady);
     res.json({
-      ok: true,
+      ok,
       brand: 'TAK1 Game Studio',
       domain: 'kalametgame.ir',
       storageMode: repo.storageMode,
+      configured: supabaseStatus.configured,
+      connected: supabaseStatus.connected,
+      schemaReady: supabaseStatus.schemaReady,
+      storageReady: Boolean(supabaseStatus.storageReady),
+      storageError: supabaseStatus.storageError ?? null,
+      missingVars: supabaseStatus.missingVars,
+      missingTables: supabaseStatus.missingTables ?? [],
+      error: supabaseStatus.error ?? null,
       supabaseStatus,
       timestamp: new Date().toISOString(),
     });
@@ -116,7 +275,7 @@ async function startServer() {
   });
 
   // ---- Public Submissions (Insert-Only + Tracking Lookup by Exact Code) ----
-  app.post('/api/support', async (req, res) => {
+  app.post('/api/support', publicSubmitLimiter, async (req, res) => {
     try {
       const { name, email, productId, productName, subject, message } = req.body ?? {};
       const cleanName = String(name ?? '').trim();
@@ -156,7 +315,7 @@ async function startServer() {
     }
   });
 
-  app.get('/api/support/track/:code', async (req, res) => {
+  app.get('/api/support/track/:code', trackLimiter, async (req, res) => {
     try {
       const code = String(req.params.code ?? '').trim().toUpperCase();
       if (!/^TAK1-[A-Z0-9]{4,12}$/.test(code)) {
@@ -185,7 +344,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/suggestions', async (req, res) => {
+  app.post('/api/suggestions', publicSubmitLimiter, async (req, res) => {
     try {
       const { name, email, category, productId, title, details } = req.body ?? {};
       const cleanName = String(name ?? '').trim();
@@ -225,7 +384,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/contact', async (req, res) => {
+  app.post('/api/contact', publicSubmitLimiter, async (req, res) => {
     try {
       const { name, email, subject, message } = req.body ?? {};
       const cleanName = String(name ?? '').trim();
@@ -297,7 +456,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/admin/setup', async (req, res) => {
+  app.post('/api/admin/setup', authLimiter, async (req, res) => {
     try {
       const { email, password, displayName } = req.body ?? {};
       const cleanEmail = String(email ?? '').trim().toLowerCase();
@@ -332,7 +491,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/admin/login', async (req, res) => {
+  app.post('/api/admin/login', authLimiter, async (req, res) => {
     try {
       const { email, password } = req.body ?? {};
       const normalizedEmail = String(email ?? '').trim().toLowerCase();
@@ -380,7 +539,16 @@ async function startServer() {
     }
   });
 
-  // Media Upload to Supabase Storage
+  // Media Upload & Management in Supabase Storage
+  app.get('/api/admin/media', requireAdmin, async (_req, res) => {
+    try {
+      const items = await repo.listStorageMedia();
+      res.json({ items });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
   app.post('/api/admin/upload', requireAdmin, async (req, res) => {
     try {
       const { dataUrl, folder } = req.body ?? {};
@@ -390,6 +558,20 @@ async function startServer() {
       }
       const result = await repo.uploadMediaToStorage(dataUrl, String(folder ?? 'products'));
       res.status(201).json(result);
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  app.delete('/api/admin/media', requireAdmin, async (req, res) => {
+    try {
+      const pathParam = String(req.body?.path ?? req.query?.path ?? '').trim();
+      if (!pathParam) {
+        res.status(400).json({ error: 'Storage file path is required.' });
+        return;
+      }
+      const ok = await repo.deleteStorageMedia(pathParam);
+      res.json({ ok });
     } catch (err) {
       sendError(res, err);
     }
@@ -455,6 +637,7 @@ async function startServer() {
 
   app.put('/api/admin/products/:id', requireAdmin, async (req, res) => {
     try {
+      assertValidUuid(req.params.id);
       const body = req.body ?? {};
       const links =
         body.links !== undefined
@@ -466,8 +649,21 @@ async function startServer() {
             }
           : undefined;
 
+      const cleanSlug =
+        body.slug !== undefined
+          ? String(body.slug)
+              .trim()
+              .toLowerCase()
+              .replace(/[^a-z0-9-]+/g, '-')
+              .replace(/^-+|-+$/g, '')
+          : undefined;
+      if (body.slug !== undefined && !cleanSlug) {
+        res.status(400).json({ error: 'Product slug cannot be empty.' });
+        return;
+      }
+
       const item = await repo.updateProduct(req.params.id, {
-        slug: body.slug !== undefined ? String(body.slug).trim().toLowerCase() : undefined,
+        slug: cleanSlug,
         category: ['game', 'app', 'tool'].includes(body.category) ? body.category : undefined,
         titleFa: body.titleFa !== undefined ? String(body.titleFa).trim() : undefined,
         titleEn: body.titleEn !== undefined ? String(body.titleEn).trim() : undefined,
@@ -498,6 +694,7 @@ async function startServer() {
 
   app.delete('/api/admin/products/:id', requireAdmin, async (req, res) => {
     try {
+      assertValidUuid(req.params.id);
       const ok = await repo.deleteProduct(req.params.id);
       res.json({ ok });
     } catch (err) {
@@ -545,6 +742,7 @@ async function startServer() {
 
   app.put('/api/admin/news/:id', requireAdmin, async (req, res) => {
     try {
+      assertValidUuid(req.params.id);
       const b = req.body ?? {};
       const item = await repo.updateNews(req.params.id, {
         titleFa: b.titleFa !== undefined ? String(b.titleFa).trim() : undefined,
@@ -570,6 +768,7 @@ async function startServer() {
 
   app.delete('/api/admin/news/:id', requireAdmin, async (req, res) => {
     try {
+      assertValidUuid(req.params.id);
       const ok = await repo.deleteNews(req.params.id);
       res.json({ ok });
     } catch (err) {
@@ -613,6 +812,7 @@ async function startServer() {
 
   app.put('/api/admin/team/:id', requireAdmin, async (req, res) => {
     try {
+      assertValidUuid(req.params.id);
       const b = req.body ?? {};
       const item = await repo.updateTeamMember(req.params.id, {
         nameFa: b.nameFa !== undefined ? String(b.nameFa).trim() : undefined,
@@ -637,6 +837,7 @@ async function startServer() {
 
   app.delete('/api/admin/team/:id', requireAdmin, async (req, res) => {
     try {
+      assertValidUuid(req.params.id);
       const ok = await repo.deleteTeamMember(req.params.id);
       res.json({ ok });
     } catch (err) {
@@ -656,6 +857,7 @@ async function startServer() {
 
   app.patch('/api/admin/tickets/:id', requireAdmin, async (req: AuthenticatedAdminRequest, res) => {
     try {
+      assertValidUuid(req.params.id);
       const { status, adminReply } = req.body ?? {};
       const cleanStatus = ['open', 'in_progress', 'resolved'].includes(status) ? status : undefined;
       const item = await repo.updateTicket(
@@ -688,6 +890,7 @@ async function startServer() {
 
   app.patch('/api/admin/suggestions/:id', requireAdmin, async (req: AuthenticatedAdminRequest, res) => {
     try {
+      assertValidUuid(req.params.id);
       const { status, adminNote } = req.body ?? {};
       const cleanStatus = ['new', 'reviewed', 'planned', 'archived'].includes(status) ? status : undefined;
       const item = await repo.updateSuggestion(
@@ -710,6 +913,7 @@ async function startServer() {
 
   app.delete('/api/admin/suggestions/:id', requireAdmin, async (req, res) => {
     try {
+      assertValidUuid(req.params.id);
       const ok = await repo.deleteSuggestion(req.params.id);
       res.json({ ok });
     } catch (err) {
@@ -729,6 +933,7 @@ async function startServer() {
 
   app.patch('/api/admin/messages/:id', requireAdmin, async (req, res) => {
     try {
+      assertValidUuid(req.params.id);
       const { read } = req.body ?? {};
       const item = await repo.markContactMessageRead(req.params.id, Boolean(read));
       if (!item) {
@@ -743,6 +948,7 @@ async function startServer() {
 
   app.delete('/api/admin/messages/:id', requireAdmin, async (req, res) => {
     try {
+      assertValidUuid(req.params.id);
       const ok = await repo.deleteContactMessage(req.params.id);
       res.json({ ok });
     } catch (err) {
@@ -803,11 +1009,11 @@ async function startServer() {
     },
   );
 
-  // Admin Users & Access Control
+  // Admin Users & Access Control (Strictly super_admin ONLY)
   app.get(
     '/api/admin/users',
     requireAdmin,
-    requireAdminRole(['super_admin', 'admin']),
+    requireAdminRole(['super_admin']),
     async (_req, res) => {
       try {
         const items = await repo.listAdminUsers();
@@ -821,7 +1027,7 @@ async function startServer() {
   app.post(
     '/api/admin/users',
     requireAdmin,
-    requireAdminRole(['super_admin', 'admin']),
+    requireAdminRole(['super_admin']),
     async (req: AuthenticatedAdminRequest, res) => {
       try {
         const { email, password, displayName, role } = req.body ?? {};
@@ -833,10 +1039,6 @@ async function startServer() {
 
         if (!EMAIL_RE.test(cleanEmail) || rawPassword.length < 8) {
           res.status(400).json({ error: 'Valid email and password (min 8 chars) are required.' });
-          return;
-        }
-        if (cleanRole === 'super_admin' && req.adminUser?.role !== 'super_admin') {
-          res.status(403).json({ error: 'Only super_admin can create another super_admin.' });
           return;
         }
 
@@ -856,20 +1058,42 @@ async function startServer() {
   app.patch(
     '/api/admin/users/:id',
     requireAdmin,
-    requireAdminRole(['super_admin', 'admin']),
+    requireAdminRole(['super_admin']),
     async (req: AuthenticatedAdminRequest, res) => {
       try {
+        assertValidUuid(req.params.id);
         if (req.params.id === req.adminUser?.id && req.body?.isActive === false) {
           res.status(400).json({ error: 'You cannot deactivate your own admin account.' });
           return;
         }
+        if (req.params.id === req.adminUser?.id && req.body?.role && req.body.role !== 'super_admin') {
+          res.status(400).json({ error: 'You cannot demote your own super_admin role.' });
+          return;
+        }
+
+        const existingTarget = await repo.getAdminUserById(req.params.id);
+        if (!existingTarget) {
+          res.status(404).json({ error: 'Admin user not found' });
+          return;
+        }
+
         const role = ['super_admin', 'admin', 'editor'].includes(req.body?.role)
           ? (req.body.role as AdminRole)
           : undefined;
-        if (role === 'super_admin' && req.adminUser?.role !== 'super_admin') {
-          res.status(403).json({ error: 'Only super_admin can assign super_admin role.' });
-          return;
+
+        const isDemotingOrDisablingLastSuper =
+          existingTarget.role === 'super_admin' &&
+          existingTarget.isActive &&
+          (req.body?.isActive === false || (role !== undefined && role !== 'super_admin'));
+
+        if (isDemotingOrDisablingLastSuper) {
+          const superCount = await repo.countActiveSuperAdmins();
+          if (superCount <= 1) {
+            res.status(400).json({ error: 'Cannot disable or demote the last active super_admin.' });
+            return;
+          }
         }
+
         const item = await repo.updateAdminUser(req.params.id, {
           role,
           isActive: req.body?.isActive !== undefined ? Boolean(req.body.isActive) : undefined,
@@ -893,9 +1117,18 @@ async function startServer() {
     requireAdminRole(['super_admin']),
     async (req: AuthenticatedAdminRequest, res) => {
       try {
+        assertValidUuid(req.params.id);
         if (req.params.id === req.adminUser?.id) {
           res.status(400).json({ error: 'You cannot delete your own account.' });
           return;
+        }
+        const existingTarget = await repo.getAdminUserById(req.params.id);
+        if (existingTarget?.role === 'super_admin' && existingTarget.isActive) {
+          const superCount = await repo.countActiveSuperAdmins();
+          if (superCount <= 1) {
+            res.status(400).json({ error: 'Cannot delete the last active super_admin.' });
+            return;
+          }
         }
         const ok = await repo.deleteAdminUser(req.params.id);
         res.json({ ok });
@@ -908,6 +1141,24 @@ async function startServer() {
   // Explicit 404 for unknown API paths
   app.all('/api/*', (_req, res) => {
     res.status(404).json({ error: 'API endpoint not found' });
+  });
+
+  // Safe Express body-parser / error handler
+  app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+    if (!err) {
+      next();
+      return;
+    }
+    const raw = err as { type?: string; status?: number };
+    if (raw.type === 'entity.parse.failed') {
+      res.status(400).json({ error: 'Malformed JSON request body.', code: 'INVALID_JSON' });
+      return;
+    }
+    if (raw.type === 'entity.too.large') {
+      res.status(413).json({ error: 'Request payload exceeds maximum limit (10MB).', code: 'PAYLOAD_TOO_LARGE' });
+      return;
+    }
+    sendError(res, err);
   });
 
   // ---- Vite Dev Middleware or Production Dist ----
@@ -931,10 +1182,25 @@ async function startServer() {
     });
   }
 
-  app.listen(port, '0.0.0.0', () => {
+  const server = app.listen(port, '0.0.0.0', () => {
     console.log(`TAK1 Game Studio server listening on http://0.0.0.0:${port}`);
   });
+
+  const shutdown = (signal: string) => {
+    console.log(`Received ${signal}. Closing TAK1 Game Studio server gracefully...`);
+    server.close(() => {
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(0), 5000).unref();
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Promise Rejection:', reason);
+});
 
 startServer().catch((err) => {
   console.error('Failed to start server:', err);

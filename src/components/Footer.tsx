@@ -41,6 +41,51 @@ export function Footer() {
             <p className="max-w-md text-sm leading-relaxed text-slate-400">
               {studioTagline}
             </p>
+            {siteSettings?.socialLinks &&
+              Object.values(siteSettings.socialLinks).some((v) => Boolean(v)) && (
+                <div className="flex flex-wrap items-center gap-3 pt-1 text-xs">
+                  {siteSettings.socialLinks.telegram && (
+                    <a
+                      href={siteSettings.socialLinks.telegram}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-slate-400 hover:text-[#F2CF66] transition-colors"
+                    >
+                      Telegram
+                    </a>
+                  )}
+                  {siteSettings.socialLinks.instagram && (
+                    <a
+                      href={siteSettings.socialLinks.instagram}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-slate-400 hover:text-[#F2CF66] transition-colors"
+                    >
+                      Instagram
+                    </a>
+                  )}
+                  {siteSettings.socialLinks.discord && (
+                    <a
+                      href={siteSettings.socialLinks.discord}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-slate-400 hover:text-[#F2CF66] transition-colors"
+                    >
+                      Discord
+                    </a>
+                  )}
+                  {siteSettings.socialLinks.github && (
+                    <a
+                      href={siteSettings.socialLinks.github}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-slate-400 hover:text-[#F2CF66] transition-colors"
+                    >
+                      GitHub
+                    </a>
+                  )}
+                </div>
+              )}
           </div>
 
           <div className="md:col-span-3 space-y-3">

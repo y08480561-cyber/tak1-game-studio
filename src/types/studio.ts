@@ -152,9 +152,19 @@ export interface SupabaseStatus {
   connected: boolean;
   schemaReady: boolean;
   storageReady?: boolean;
+  storageError?: string;
   missingVars: string[];
   missingTables?: string[];
   error?: string;
+}
+
+export interface StorageMediaItem {
+  name: string;
+  path: string;
+  folder: string;
+  url: string;
+  size: number | null;
+  createdAt: string | null;
 }
 
 export interface AdminOverviewStats {

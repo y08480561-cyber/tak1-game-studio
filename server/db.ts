@@ -8,6 +8,7 @@ import type {
   NewsPost,
   Product,
   SiteSettings,
+  StorageMediaItem,
   Suggestion,
   SupabaseStatus,
   SupportTicket,
@@ -496,10 +497,14 @@ export class StudioRepository {
       if (otherTableError?.error) {
         const errCode = String(otherTableError.error.code || '');
         const errMsg = redactSecrets(String(otherTableError.error.message || 'Unknown PostgREST error'));
-        const hint =
-          errCode === '42501'
-            ? ' Run the GRANT statements at the bottom of supabase/schema.sql and reload the PostgREST schema cache.'
-            : '';
+        let hint = '';
+        if (errCode === '42501') {
+          hint =
+            ' Run supabase/migrations/001_security_rls_and_grants.sql in Supabase SQL Editor and reload the PostgREST schema cache.';
+        } else if (errCode === 'PGRST204') {
+          hint =
+            ' Database columns are out of sync with schema.sql. Run supabase/schema.sql and execute NOTIFY pgrst, \'reload schema\'.';
+        }
         return {
           configured: true,
           connected: true,
@@ -519,6 +524,13 @@ export class StudioRepository {
         connected: true,
         schemaReady: true,
         storageReady: !bucketErr,
+        ...(bucketErr
+          ? {
+              storageError: redactSecrets(
+                String(bucketErr.message || 'Bucket "studio-media" is missing or inaccessible.'),
+              ),
+            }
+          : {}),
         missingVars: [],
         missingTables: [],
       };
@@ -702,6 +714,24 @@ export class StudioRepository {
       .order('created_at', { ascending: true });
     if (error) throw toSafeHttpError(error);
     return (data ?? []).map(mapSupabaseAdminUser);
+  }
+
+  async getAdminUserById(id: string): Promise<AdminUser | null> {
+    const sb = getSupabaseAdminClient();
+    const { data, error } = await sb.from('admin_users').select('*').eq('id', id).maybeSingle();
+    if (error) throw toSafeHttpError(error);
+    return data ? mapSupabaseAdminUser(data) : null;
+  }
+
+  async countActiveSuperAdmins(): Promise<number> {
+    const sb = getSupabaseAdminClient();
+    const { count, error } = await sb
+      .from('admin_users')
+      .select('id', { count: 'exact', head: true })
+      .eq('role', 'super_admin')
+      .eq('is_active', true);
+    if (error) throw toSafeHttpError(error);
+    return count ?? 0;
   }
 
   async createAdditionalAdmin(input: {
@@ -1219,6 +1249,13 @@ export class StudioRepository {
       throw new HttpError(400, 'Image size must be 5MB or less.', 'MEDIA_TOO_LARGE');
     }
 
+    if (mimeType === 'image/svg+xml') {
+      const svgText = buffer.toString('utf8');
+      if (/<script[\s>]|on[a-z]+\s*=|javascript:|<foreignObject/i.test(svgText)) {
+        throw new HttpError(400, 'SVG contains disallowed executable content.', 'UNSAFE_SVG');
+      }
+    }
+
     const extMap: Record<string, string> = {
       'image/png': 'png',
       'image/jpeg': 'jpg',
@@ -1227,7 +1264,9 @@ export class StudioRepository {
       'image/svg+xml': 'svg',
     };
     const ext = extMap[mimeType] || 'png';
-    const safeFolder = folder.replace(/[^a-z0-9_-]/gi, '') || 'general';
+    const allowedFolders = ['icons', 'screenshots', 'news', 'team', 'products', 'general'];
+    const cleanFolder = folder.replace(/[^a-z0-9_-]/gi, '').toLowerCase();
+    const safeFolder = allowedFolders.includes(cleanFolder) ? cleanFolder : 'general';
     const filePath = `${safeFolder}/${Date.now()}-${crypto.randomBytes(6).toString('hex')}.${ext}`;
 
     const sb = getSupabaseAdminClient();
@@ -1245,6 +1284,57 @@ export class StudioRepository {
 
     const { data } = sb.storage.from('studio-media').getPublicUrl(filePath);
     return { url: data.publicUrl };
+  }
+
+  async listStorageMedia(): Promise<StorageMediaItem[]> {
+    const sb = getSupabaseAdminClient();
+    const folders = ['icons', 'screenshots', 'news', 'team', 'products', 'general'];
+    const results = await Promise.all(
+      folders.map(async (folder) => {
+        const { data, error } = await sb.storage.from('studio-media').list(folder, {
+          limit: 50,
+          sortBy: { column: 'created_at', order: 'desc' },
+        });
+        if (error || !data) return [] as StorageMediaItem[];
+        return data
+          .filter((item) => Boolean(item.name) && !item.name.endsWith('/'))
+          .map((item) => {
+            const objectPath = `${folder}/${item.name}`;
+            const { data: pub } = sb.storage.from('studio-media').getPublicUrl(objectPath);
+            const meta = (item.metadata ?? {}) as { size?: unknown };
+            return {
+              name: item.name,
+              path: objectPath,
+              folder,
+              url: pub.publicUrl,
+              size: typeof meta.size === 'number' ? meta.size : null,
+              createdAt: item.created_at ? String(item.created_at) : null,
+            };
+          });
+      }),
+    );
+    return results
+      .flat()
+      .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
+  }
+
+  async deleteStorageMedia(objectPath: string): Promise<boolean> {
+    const clean = objectPath.trim().replace(/^\/+/, '');
+    if (
+      !clean ||
+      clean.includes('..') ||
+      clean.includes('\\') ||
+      !/^[a-z0-9_-]+\/[a-z0-9._-]+$/i.test(clean)
+    ) {
+      throw new HttpError(400, 'Invalid storage file path.', 'INVALID_MEDIA_PATH');
+    }
+
+    const sb = getSupabaseAdminClient();
+    const { error } = await sb.storage.from('studio-media').remove([clean]);
+    if (error) {
+      throw new HttpError(500, 'Failed to remove file from Supabase Storage.', 'STORAGE_DELETE_FAILED');
+    }
+    return true;
   }
 
   // ---- Overview Metrics ----
