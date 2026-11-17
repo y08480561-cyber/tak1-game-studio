@@ -504,7 +504,45 @@ export class StudioRepository {
     }
 
     try {
+      const { url, serviceRoleKey } = getSupabaseEnv();
       const sb = getSupabaseAdminClient();
+
+      // Step 0: Low-level fetch reachability check with 6s timeout to diagnose DNS/TLS/paused project issues
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      try {
+        const res = await fetch(`${url}/auth/v1/health`, {
+          headers: { apikey: serviceRoleKey },
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (!res.ok && res.status >= 500) {
+          return {
+            configured: true,
+            connected: false,
+            schemaReady: false,
+            storageReady: false,
+            missingVars: [],
+            missingTables: [],
+            error: `Supabase API returned HTTP ${res.status}. Your Supabase project at ${url} may be paused or experiencing downtime. Please check your Supabase Dashboard.`,
+          };
+        }
+      } catch (fetchErr: unknown) {
+        clearTimeout(timeoutId);
+        const errStr = String((fetchErr as Error)?.message || fetchErr);
+        const isTimeout = errStr.includes('aborted') || errStr.includes('timeout');
+        return {
+          configured: true,
+          connected: false,
+          schemaReady: false,
+          storageReady: false,
+          missingVars: [],
+          missingTables: [],
+          error: isTimeout
+            ? `Connection to Supabase at ${url} timed out after 6 seconds. The project might be paused or DNS is unreachable from Render.`
+            : `Unable to reach Supabase API at SUPABASE_URL (${errStr}). Verify that your Supabase project is active (not paused) and SUPABASE_URL is correct.`,
+        };
+      }
 
       // Step 1: Verify live API reachability and service_role Auth Admin privileges
       const { error: authAdminErr } = await sb.auth.admin.listUsers({ page: 1, perPage: 1 });
