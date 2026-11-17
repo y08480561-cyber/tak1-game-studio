@@ -91,14 +91,15 @@ interface SupabaseEnvDiagnostic {
 function getSupabaseEnv(): SupabaseEnvDiagnostic {
   const rawUrl = cleanEnvValue(process.env.SUPABASE_URL);
   const url = rawUrl.replace(/\/+$/, '');
-  const serviceRoleKey = cleanEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const rawKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceRoleKey = cleanEnvValue(rawKey);
   const missingVars: string[] = [];
 
   if (!url) {
     missingVars.push('SUPABASE_URL');
   }
   if (!serviceRoleKey) {
-    missingVars.push('SUPABASE_SERVICE_ROLE_KEY');
+    missingVars.push('SUPABASE_SECRET_KEY');
   }
 
   if (missingVars.length > 0) {
@@ -142,7 +143,7 @@ function getSupabaseEnv(): SupabaseEnvDiagnostic {
       url,
       serviceRoleKey,
       missingVars: [],
-      configError: `SUPABASE_SERVICE_ROLE_KEY is set to a "${keyRole}" public key instead of the server "service_role" / "sb_secret_" key.`,
+      configError: `SUPABASE_SECRET_KEY is set to a "${keyRole}" public key instead of the server secret ("sb_secret_") key.`,
     };
   }
 
@@ -595,7 +596,7 @@ export class StudioRepository {
             storageReady: false,
             missingVars: [],
             missingTables: [],
-            error: `Supabase rejected SUPABASE_SERVICE_ROLE_KEY (${status ? `HTTP ${status}: ` : ''}${rawMsg}). Ensure you pasted the Project Settings -> API service_role / secret key without quotes or extra characters.`,
+            error: `Supabase rejected SUPABASE_SECRET_KEY (${status ? `HTTP ${status}: ` : ''}${rawMsg}). Ensure you pasted the secret key (sb_secret_...) without quotes or extra characters.`,
           };
         }
 
