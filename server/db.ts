@@ -25,16 +25,118 @@ export class HttpError extends Error {
   }
 }
 
-function getSupabaseEnv(): { url: string; serviceRoleKey: string; missingVars: string[] } {
-  const url = process.env.SUPABASE_URL?.trim() || '';
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || '';
+const REQUIRED_SCHEMA_TABLES = [
+  'products',
+  'news',
+  'team_members',
+  'support_tickets',
+  'suggestions',
+  'contact_messages',
+  'admin_users',
+  'site_settings',
+] as const;
+
+function cleanEnvValue(raw: string | undefined): string {
+  let val = (raw ?? '').trim();
+  if (
+    (val.startsWith('"') && val.endsWith('"') && val.length >= 2) ||
+    (val.startsWith("'") && val.endsWith("'") && val.length >= 2)
+  ) {
+    val = val.slice(1, -1).trim();
+  }
+  return val;
+}
+
+function redactSecrets(text: string): string {
+  return text
+    .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, '[REDACTED_JWT]')
+    .replace(/sb_(?:secret|publishable)_[A-Za-z0-9_-]+/g, '[REDACTED_KEY]')
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]');
+}
+
+function inspectSupabaseKeyRole(key: string): 'service_role' | 'anon' | 'publishable' | 'secret' | 'unknown' {
+  if (!key) return 'unknown';
+  if (key.startsWith('sb_publishable_')) return 'publishable';
+  if (key.startsWith('sb_secret_')) return 'secret';
+
+  const parts = key.split('.');
+  if (parts.length === 3 && parts[1]) {
+    try {
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as {
+        role?: unknown;
+      };
+      if (payload.role === 'service_role') return 'service_role';
+      if (payload.role === 'anon') return 'anon';
+    } catch {
+      return 'unknown';
+    }
+  }
+  return 'unknown';
+}
+
+interface SupabaseEnvDiagnostic {
+  url: string;
+  serviceRoleKey: string;
+  missingVars: string[];
+  configError?: string;
+}
+
+function getSupabaseEnv(): SupabaseEnvDiagnostic {
+  const rawUrl = cleanEnvValue(process.env.SUPABASE_URL);
+  const url = rawUrl.replace(/\/+$/, '');
+  const serviceRoleKey = cleanEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY);
   const missingVars: string[] = [];
 
-  if (!url || !/^https?:\/\/.+/i.test(url)) {
+  if (!url) {
     missingVars.push('SUPABASE_URL');
   }
   if (!serviceRoleKey) {
     missingVars.push('SUPABASE_SERVICE_ROLE_KEY');
+  }
+
+  if (missingVars.length > 0) {
+    return { url, serviceRoleKey, missingVars };
+  }
+
+  let parsedUrl: URL | null = null;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    return {
+      url,
+      serviceRoleKey,
+      missingVars: [],
+      configError: 'SUPABASE_URL is not a valid URL. Expected format: https://<project-ref>.supabase.co',
+    };
+  }
+
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    return {
+      url,
+      serviceRoleKey,
+      missingVars: [],
+      configError: 'SUPABASE_URL must start with https:// (e.g., https://<project-ref>.supabase.co).',
+    };
+  }
+
+  if (parsedUrl.hostname === 'supabase.com' || parsedUrl.pathname.includes('/dashboard')) {
+    return {
+      url,
+      serviceRoleKey,
+      missingVars: [],
+      configError:
+        'SUPABASE_URL points to the Supabase Dashboard URL instead of the Project API URL (https://<project-ref>.supabase.co).',
+    };
+  }
+
+  const keyRole = inspectSupabaseKeyRole(serviceRoleKey);
+  if (keyRole === 'anon' || keyRole === 'publishable') {
+    return {
+      url,
+      serviceRoleKey,
+      missingVars: [],
+      configError: `SUPABASE_SERVICE_ROLE_KEY is set to a "${keyRole}" public key instead of the server "service_role" / "sb_secret_" key.`,
+    };
   }
 
   return { url, serviceRoleKey, missingVars };
@@ -45,13 +147,16 @@ let cachedKey = '';
 let cachedAdminClient: SupabaseClient | null = null;
 
 export function getSupabaseAdminClient(): SupabaseClient {
-  const { url, serviceRoleKey, missingVars } = getSupabaseEnv();
+  const { url, serviceRoleKey, missingVars, configError } = getSupabaseEnv();
   if (missingVars.length > 0) {
     throw new HttpError(
       503,
       `Supabase is not configured on the server. Missing: ${missingVars.join(', ')}`,
       'SUPABASE_NOT_CONFIGURED',
     );
+  }
+  if (configError) {
+    throw new HttpError(503, configError, 'SUPABASE_INVALID_CONFIG');
   }
   if (!cachedAdminClient || cachedUrl !== url || cachedKey !== serviceRoleKey) {
     cachedUrl = url;
@@ -64,13 +169,16 @@ export function getSupabaseAdminClient(): SupabaseClient {
 }
 
 export function createSupabaseAuthClient(): SupabaseClient {
-  const { url, serviceRoleKey, missingVars } = getSupabaseEnv();
+  const { url, serviceRoleKey, missingVars, configError } = getSupabaseEnv();
   if (missingVars.length > 0) {
     throw new HttpError(
       503,
       `Supabase is not configured on the server. Missing: ${missingVars.join(', ')}`,
       'SUPABASE_NOT_CONFIGURED',
     );
+  }
+  if (configError) {
+    throw new HttpError(503, configError, 'SUPABASE_INVALID_CONFIG');
   }
   return createClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -93,13 +201,20 @@ export function toSafeHttpError(err: unknown): HttpError {
   if (err instanceof HttpError) return err;
   const raw = err as { code?: string; message?: string } | undefined;
   const code = String(raw?.code || '');
-  const msg = String(raw?.message || '');
+  const msg = redactSecrets(String(raw?.message || ''));
 
   if (isMissingTableError(raw)) {
     return new HttpError(
       503,
       'Supabase database schema is incomplete. Please execute supabase/schema.sql in Supabase SQL Editor.',
       'SUPABASE_SCHEMA_MISSING',
+    );
+  }
+  if (code === '42501') {
+    return new HttpError(
+      503,
+      'Supabase database permission denied (42501). Ensure schema GRANT rules in supabase/schema.sql are applied.',
+      'SUPABASE_PERMISSION_DENIED',
     );
   }
   if (code === '23505') {
@@ -262,54 +377,150 @@ function mapSupabaseAdminUser(row: Record<string, unknown>): AdminUser {
 
 export class StudioRepository {
   get storageMode(): 'supabase' | 'unconfigured' {
-    return getSupabaseEnv().missingVars.length === 0 ? 'supabase' : 'unconfigured';
+    const env = getSupabaseEnv();
+    return env.missingVars.length === 0 && !env.configError ? 'supabase' : 'unconfigured';
   }
 
   async checkSupabaseStatus(): Promise<SupabaseStatus> {
-    const { missingVars } = getSupabaseEnv();
+    const { missingVars, configError } = getSupabaseEnv();
     if (missingVars.length > 0) {
       return {
         configured: false,
         connected: false,
         schemaReady: false,
+        storageReady: false,
         missingVars,
+        missingTables: [],
         error: `Missing required environment variable(s): ${missingVars.join(', ')}`,
+      };
+    }
+
+    if (configError) {
+      return {
+        configured: true,
+        connected: false,
+        schemaReady: false,
+        storageReady: false,
+        missingVars: [],
+        missingTables: [],
+        error: configError,
       };
     }
 
     try {
       const sb = getSupabaseAdminClient();
-      const [productsCheck, adminsCheck, settingsCheck] = await Promise.all([
-        sb.from('products').select('id', { count: 'exact', head: true }),
-        sb.from('admin_users').select('id', { count: 'exact', head: true }),
-        sb.from('site_settings').select('id', { count: 'exact', head: true }),
-      ]);
 
-      const firstErr = productsCheck.error || adminsCheck.error || settingsCheck.error;
-      if (firstErr) {
-        if (isMissingTableError(firstErr)) {
+      // Step 1: Verify live API reachability and service_role Auth Admin privileges
+      const { error: authAdminErr } = await sb.auth.admin.listUsers({ page: 1, perPage: 1 });
+      if (authAdminErr) {
+        const status = (authAdminErr as { status?: number }).status;
+        const rawMsg = redactSecrets(String(authAdminErr.message || 'Authentication check failed'));
+        const lowerMsg = rawMsg.toLowerCase();
+
+        if (
+          lowerMsg.includes('fetch failed') ||
+          lowerMsg.includes('enotfound') ||
+          lowerMsg.includes('econnrefused') ||
+          lowerMsg.includes('unexpected token') ||
+          lowerMsg.includes('not valid json')
+        ) {
           return {
             configured: true,
-            connected: true,
+            connected: false,
             schemaReady: false,
+            storageReady: false,
             missingVars: [],
-            error: 'Connected to Supabase, but required schema tables are missing. Run supabase/schema.sql.',
+            missingTables: [],
+            error: `Unable to reach Supabase API at SUPABASE_URL (${rawMsg}). Verify that SUPABASE_URL is https://<project-ref>.supabase.co and not paused.`,
           };
         }
+
+        if (
+          status === 401 ||
+          status === 403 ||
+          lowerMsg.includes('invalid api key') ||
+          lowerMsg.includes('jwt') ||
+          lowerMsg.includes('not allowed') ||
+          lowerMsg.includes('unauthorized')
+        ) {
+          return {
+            configured: true,
+            connected: false,
+            schemaReady: false,
+            storageReady: false,
+            missingVars: [],
+            missingTables: [],
+            error: `Supabase rejected SUPABASE_SERVICE_ROLE_KEY (${status ? `HTTP ${status}: ` : ''}${rawMsg}). Ensure you pasted the Project Settings -> API service_role / secret key without quotes or extra characters.`,
+          };
+        }
+
         return {
           configured: true,
           connected: false,
           schemaReady: false,
+          storageReady: false,
           missingVars: [],
-          error: 'Supabase rejected the query. Verify SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.',
+          missingTables: [],
+          error: `Supabase Admin API error${status ? ` (HTTP ${status})` : ''}: ${rawMsg}`,
         };
       }
+
+      // Step 2: Check all 8 required schema tables individually
+      const tableChecks = await Promise.all(
+        REQUIRED_SCHEMA_TABLES.map(async (table) => {
+          const { error } = await sb.from(table).select('id', { count: 'exact', head: true });
+          return { table, error };
+        }),
+      );
+
+      const missingTables = tableChecks
+        .filter((item) => item.error && isMissingTableError(item.error))
+        .map((item) => item.table);
+
+      const otherTableError = tableChecks.find(
+        (item) => item.error && !isMissingTableError(item.error),
+      );
+
+      if (missingTables.length > 0) {
+        return {
+          configured: true,
+          connected: true,
+          schemaReady: false,
+          storageReady: false,
+          missingVars: [],
+          missingTables,
+          error: `Connected to Supabase, but required table(s) are missing: ${missingTables.join(', ')}. Execute supabase/schema.sql in Supabase SQL Editor.`,
+        };
+      }
+
+      if (otherTableError?.error) {
+        const errCode = String(otherTableError.error.code || '');
+        const errMsg = redactSecrets(String(otherTableError.error.message || 'Unknown PostgREST error'));
+        const hint =
+          errCode === '42501'
+            ? ' Run the GRANT statements at the bottom of supabase/schema.sql and reload the PostgREST schema cache.'
+            : '';
+        return {
+          configured: true,
+          connected: true,
+          schemaReady: false,
+          storageReady: false,
+          missingVars: [],
+          missingTables: [],
+          error: `Connected to Supabase, but querying "${otherTableError.table}" failed${errCode ? ` [${errCode}]` : ''}: ${errMsg}.${hint}`,
+        };
+      }
+
+      // Step 3: Non-blocking check for Storage bucket 'studio-media'
+      const { error: bucketErr } = await sb.storage.getBucket('studio-media');
 
       return {
         configured: true,
         connected: true,
         schemaReady: true,
+        storageReady: !bucketErr,
         missingVars: [],
+        missingTables: [],
       };
     } catch (err) {
       const safe = toSafeHttpError(err);
@@ -317,8 +528,10 @@ export class StudioRepository {
         configured: true,
         connected: false,
         schemaReady: false,
+        storageReady: false,
         missingVars: [],
-        error: safe.message,
+        missingTables: [],
+        error: redactSecrets(safe.message),
       };
     }
   }

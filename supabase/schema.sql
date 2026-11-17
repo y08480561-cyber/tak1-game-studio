@@ -454,3 +454,21 @@ create policy "Admins delete studio-media"
   on storage.objects for delete
   to authenticated
   using (bucket_id = 'studio-media' and public.is_studio_admin());
+
+-- ============================================================================
+-- 15. Explicit Role Grants & PostgREST Schema Cache Reload
+-- ============================================================================
+grant usage on schema public to anon, authenticated, service_role;
+
+grant all privileges on all tables in schema public to service_role;
+grant all privileges on all sequences in schema public to service_role;
+grant all privileges on all routines in schema public to service_role;
+
+grant select on public.products, public.news, public.team_members, public.site_settings to anon, authenticated;
+grant insert on public.support_tickets, public.suggestions, public.contact_messages to anon, authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant usage, select on all sequences in schema public to authenticated;
+grant execute on function public.is_studio_admin(), public.is_super_or_admin() to anon, authenticated, service_role;
+
+notify pgrst, 'reload schema';
+

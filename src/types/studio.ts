@@ -151,7 +151,9 @@ export interface SupabaseStatus {
   configured: boolean;
   connected: boolean;
   schemaReady: boolean;
+  storageReady?: boolean;
   missingVars: string[];
+  missingTables?: string[];
   error?: string;
 }
 

@@ -927,15 +927,28 @@ export function AdminPage() {
                   <p className="font-semibold text-red-300">
                     {isFa ? 'اتصال به سرور Supabase برقرار نشد.' : 'Unable to connect to Supabase.'}
                   </p>
-                  <p>{sbStatus.error}</p>
+                  <p className="font-mono-tabular text-[11px] text-slate-300 break-words">
+                    {sbStatus.error}
+                  </p>
                 </>
               ) : (
                 <>
                   <p className="font-semibold text-amber-300">
                     {isFa
-                      ? 'اتصال به Supabase برقرار است، اما جداول پایگاه داده هنوز ساخته نشده‌اند.'
-                      : 'Connected to Supabase, but database schema tables are missing.'}
+                      ? 'اتصال به Supabase برقرار است، اما جداول یا دسترسی‌های پایگاه داده کامل نیست.'
+                      : 'Connected to Supabase, but database schema or permissions are incomplete.'}
                   </p>
+                  {sbStatus.error && (
+                    <p className="font-mono-tabular text-[11px] text-slate-300 break-words">
+                      {sbStatus.error}
+                    </p>
+                  )}
+                  {sbStatus.missingTables && sbStatus.missingTables.length > 0 && (
+                    <p className="font-mono-tabular text-[11px] text-amber-200 break-words">
+                      {isFa ? 'جداول مفقود: ' : 'Missing tables: '}
+                      {sbStatus.missingTables.join(', ')}
+                    </p>
+                  )}
                   <p>
                     {isFa
                       ? 'فایل supabase/schema.sql را در Supabase SQL Editor اجرا کنید و سپس صفحه را بازنشانی نمایید.'
