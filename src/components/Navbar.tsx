@@ -3,7 +3,8 @@ import { Menu, X } from 'lucide-react';
 import { useStudio } from '../context/StudioContext';
 
 export function Navbar() {
-  const { path, navigate, toggleLang, t } = useStudio();
+  const { lang, path, navigate, toggleLang, t } = useStudio();
+  const isFa = lang === 'fa';
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const primaryLinks = [
@@ -40,12 +41,29 @@ export function Navbar() {
         >
           <img
             src="/assets/aistudio/image_3e0bd734.png"
-            alt="TAK1 Game Studio"
+            alt={isFa ? 'توسعه‌دهندگان بازی تک۱ | TAK1 Game Studio' : 'TAK1 Game Studio'}
             className="h-9 w-9 rounded-lg object-cover border border-white/10"
           />
-          <span className="font-display text-lg font-bold tracking-tight text-white">
-            TAK<span className="text-[#D4AF37]">1</span>
-          </span>
+          {isFa ? (
+            <span className="flex flex-col leading-tight">
+              <span className="font-display text-sm sm:text-base font-bold tracking-tight text-white">
+                توسعه‌دهندگان بازی <span className="text-[#D4AF37]">تک۱</span>
+              </span>
+              <span className="text-[10px] font-medium text-slate-400 tracking-wide">
+                TAK1 Game Studio
+              </span>
+            </span>
+          ) : (
+            <span className="flex flex-col leading-tight">
+              <span className="font-display text-base sm:text-lg font-bold tracking-tight text-white">
+                TAK<span className="text-[#D4AF37]">1</span>{' '}
+                <span className="text-sm font-medium text-slate-300">Game Studio</span>
+              </span>
+              <span className="text-[10px] font-medium text-slate-400">
+                توسعه‌دهندگان بازی تک۱
+              </span>
+            </span>
+          )}
         </a>
 
         {/* Zone 2: 5 concise single-line nav links */}

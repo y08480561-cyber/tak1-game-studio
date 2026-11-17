@@ -11,7 +11,11 @@ export function TeamPage() {
       {/* Studio Overview Split */}
       <section className="grid grid-cols-1 items-stretch gap-10 lg:grid-cols-12">
         <div className="lg:col-span-7 flex flex-col justify-center space-y-5">
-          <p className="text-xs font-medium text-[#D4AF37]">TAK1 Game Studio · kalametgame.ir</p>
+          <p className="text-xs font-medium text-[#D4AF37]">
+            {isRtl
+              ? 'توسعه‌دهندگان بازی تک۱ · TAK1 Game Studio · kalametgame.ir'
+              : 'TAK1 Game Studio · kalametgame.ir'}
+          </p>
           <h1 className="font-display text-3xl sm:text-4xl font-bold text-white leading-tight">
             {t.team.title}
           </h1>
@@ -22,7 +26,7 @@ export function TeamPage() {
           <div className="h-full min-h-[260px] rounded-2xl overflow-hidden border border-white/10 bg-[#0d0e12]">
             <SafeMedia
               src="/src/assets/images/studio_craft_atmosphere_1794901595072.jpg"
-              alt="TAK1 Game Studio Hardware and Craft"
+              alt={isRtl ? 'توسعه‌دهندگان بازی تک۱ — TAK1 Game Studio' : 'TAK1 Game Studio Hardware and Craft'}
               className="w-full h-full object-cover"
             />
           </div>

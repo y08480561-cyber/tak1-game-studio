@@ -1,10 +1,16 @@
 import { useStudio } from '../context/StudioContext';
 
+const LEGACY_FA_BRAND = 'استودیوی بازی‌سازی TAK1';
+
 export function Footer() {
   const { navigate, t, lang, siteSettings } = useStudio();
   const isFa = lang === 'fa';
-  const studioTitle =
-    (isFa ? siteSettings?.studioNameFa : siteSettings?.studioNameEn) || 'TAK1 Game Studio';
+  const customFa = siteSettings?.studioNameFa?.trim();
+  const studioNameFa =
+    customFa && customFa !== LEGACY_FA_BRAND ? customFa : 'توسعه‌دهندگان بازی تک۱';
+  const studioNameEn = siteSettings?.studioNameEn?.trim() || 'TAK1 Game Studio';
+  const studioTitle = isFa ? studioNameFa : studioNameEn;
+  const studioSubBrand = isFa ? studioNameEn : studioNameFa;
   const studioDomain = siteSettings?.officialDomain || 'kalametgame.ir';
   const studioTagline =
     (isFa ? siteSettings?.taglineFa : siteSettings?.taglineEn) || t.footer.tagline;
@@ -30,12 +36,14 @@ export function Footer() {
             <div className="flex items-center gap-3">
               <img
                 src="/assets/aistudio/image_3e0bd734.png"
-                alt="TAK1 Game Studio"
+                alt={isFa ? `${studioNameFa} | ${studioNameEn}` : studioNameEn}
                 className="h-12 w-12 rounded-xl object-cover border border-white/10"
               />
               <div>
                 <p className="font-display text-lg font-bold text-white">{studioTitle}</p>
-                <p className="font-mono-tabular text-xs text-[#D4AF37]">{studioDomain}</p>
+                <p className="font-mono-tabular text-xs text-[#D4AF37]">
+                  {studioSubBrand} · {studioDomain}
+                </p>
               </div>
             </div>
             <p className="max-w-md text-sm leading-relaxed text-slate-400">
