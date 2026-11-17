@@ -512,7 +512,10 @@ export class StudioRepository {
       const timeoutId = setTimeout(() => controller.abort(), 6000);
       try {
         const res = await fetch(`${url}/auth/v1/health`, {
-          headers: { apikey: serviceRoleKey },
+          headers: {
+            apikey: serviceRoleKey,
+            Authorization: `Bearer ${serviceRoleKey}`,
+          },
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
