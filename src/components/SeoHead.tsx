@@ -1,5 +1,13 @@
 import { useEffect } from 'react';
 import { useStudio } from '../context/StudioContext';
+import {
+  TAK1_AD_REWARD_CANONICAL,
+  TAK1_AD_REWARD_FALLBACK_PRODUCT,
+  TAK1_AD_REWARD_ICON,
+  TAK1_AD_REWARD_SEO,
+  TAK1_AD_REWARD_SLUG,
+  buildTak1AdRewardJsonLd,
+} from '../seo/tak1AdRewardSeo';
 
 const KNOWN_STATIC_ROUTES = new Set([
   '/',
@@ -141,7 +149,29 @@ export function SeoHead() {
         slug = rawSlug;
       }
       const product = products.find((p) => p.slug === slug);
-      if (product) {
+      if (slug === TAK1_AD_REWARD_SLUG) {
+        canonicalUrl = TAK1_AD_REWARD_CANONICAL;
+        title = isFa ? TAK1_AD_REWARD_SEO.fa.title : TAK1_AD_REWARD_SEO.en.title;
+        description = isFa
+          ? TAK1_AD_REWARD_SEO.fa.description
+          : TAK1_AD_REWARD_SEO.en.description;
+        if (product?.iconUrl) {
+          ogImage = product.iconUrl.startsWith('http')
+            ? product.iconUrl
+            : `${baseUrl}${product.iconUrl}`;
+        } else {
+          ogImage = TAK1_AD_REWARD_ICON;
+        }
+        jsonLd = buildTak1AdRewardJsonLd({
+          isFa,
+          version: product?.version || TAK1_AD_REWARD_FALLBACK_PRODUCT.version,
+          releaseDate: product?.releaseDate || TAK1_AD_REWARD_FALLBACK_PRODUCT.releaseDate,
+          iconUrl: ogImage,
+          myketUrl: product?.links?.myket || TAK1_AD_REWARD_FALLBACK_PRODUCT.links.myket,
+          directUrl: product?.links?.direct,
+          contactEmail: siteSettings?.contactEmail,
+        });
+      } else if (product) {
         const pTitle = isFa ? product.titleFa : product.titleEn;
         const pDesc = isFa
           ? product.shortDescFa || product.fullDescFa

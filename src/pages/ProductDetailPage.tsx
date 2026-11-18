@@ -3,14 +3,22 @@ import { ArrowLeft, ArrowRight, Download, ExternalLink, LifeBuoy } from 'lucide-
 import { useStudio } from '../context/StudioContext';
 import type { Product } from '../types/studio';
 import { SafeMedia } from '../components/SafeMedia';
+import {
+  TAK1_AD_REWARD_FALLBACK_PRODUCT,
+  TAK1_AD_REWARD_SEO,
+  TAK1_AD_REWARD_SLUG,
+} from '../seo/tak1AdRewardSeo';
 
 export function ProductDetailPage({ slug }: { slug: string }) {
   const { lang, t, navigate, products } = useStudio();
   const isRtl = lang === 'fa';
   const BackIcon = isRtl ? ArrowRight : ArrowLeft;
+  const isTargetAdRewardGame = slug === TAK1_AD_REWARD_SLUG;
 
   const [product, setProduct] = useState<Product | null>(
-    () => products.find((p) => p.slug === slug) ?? null,
+    () =>
+      products.find((p) => p.slug === slug) ??
+      (isTargetAdRewardGame ? TAK1_AD_REWARD_FALLBACK_PRODUCT : null),
   );
   const [loading, setLoading] = useState(!product);
   const [notFound, setNotFound] = useState(false);
@@ -19,12 +27,20 @@ export function ProductDetailPage({ slug }: { slug: string }) {
   useEffect(() => {
     let active = true;
     const load = async () => {
-      setLoading(true);
+      if (!isTargetAdRewardGame) {
+        setLoading(true);
+      }
       setNotFound(false);
       try {
         const res = await fetch(`/api/products/${encodeURIComponent(slug)}`);
         if (!res.ok) {
-          if (active) setNotFound(true);
+          if (active) {
+            if (isTargetAdRewardGame && res.status !== 404) {
+              setProduct((prev) => prev ?? TAK1_AD_REWARD_FALLBACK_PRODUCT);
+            } else {
+              setNotFound(true);
+            }
+          }
           return;
         }
         const json = await res.json();
@@ -33,7 +49,13 @@ export function ProductDetailPage({ slug }: { slug: string }) {
           setActiveScreenshot(json.item.screenshots?.[0] ?? null);
         }
       } catch {
-        if (active) setNotFound(true);
+        if (active) {
+          if (isTargetAdRewardGame) {
+            setProduct((prev) => prev ?? TAK1_AD_REWARD_FALLBACK_PRODUCT);
+          } else {
+            setNotFound(true);
+          }
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -42,7 +64,7 @@ export function ProductDetailPage({ slug }: { slug: string }) {
     return () => {
       active = false;
     };
-  }, [slug]);
+  }, [slug, isTargetAdRewardGame]);
 
   if (loading) {
     return (
@@ -69,8 +91,19 @@ export function ProductDetailPage({ slug }: { slug: string }) {
     );
   }
 
-  const title = isRtl ? product.titleFa : product.titleEn;
-  const shortDesc = isRtl ? product.shortDescFa : product.shortDescEn;
+  const title = isTargetAdRewardGame
+    ? isRtl
+      ? TAK1_AD_REWARD_SEO.fa.h1
+      : TAK1_AD_REWARD_SEO.en.h1
+    : isRtl
+      ? product.titleFa
+      : product.titleEn;
+  const shortDesc = isTargetAdRewardGame
+    ? (isRtl ? product.shortDescFa : product.shortDescEn) ||
+      (isRtl ? TAK1_AD_REWARD_SEO.fa.shortSummary : TAK1_AD_REWARD_SEO.en.shortSummary)
+    : isRtl
+      ? product.shortDescFa
+      : product.shortDescEn;
   const fullDesc = isRtl ? product.fullDescFa : product.fullDescEn;
 
   const storeLinks = [
@@ -84,14 +117,17 @@ export function ProductDetailPage({ slug }: { slug: string }) {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8 space-y-12">
-      <button
-        type="button"
-        onClick={() => navigate('/products')}
-        className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors cursor-pointer"
+      <a
+        href="/products"
+        onClick={(e) => {
+          e.preventDefault();
+          navigate('/products');
+        }}
+        className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors"
       >
         <BackIcon className="h-4 w-4" />
         <span>{t.productDetail.backToCatalog}</span>
-      </button>
+      </a>
 
       {/* Product Hero Header */}
       <section className="surface-card rounded-2xl p-6 sm:p-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -192,25 +228,181 @@ export function ProductDetailPage({ slug }: { slug: string }) {
 
       {/* Full Overview & Support Link */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <div className="lg:col-span-8 surface-card rounded-2xl p-6 sm:p-8 space-y-4">
-          <h2 className="font-display text-xl font-bold text-white">
-            {t.productDetail.overviewTitle}
-          </h2>
-          <div className="text-sm sm:text-base leading-8 text-slate-300 whitespace-pre-line">
-            {fullDesc || shortDesc}
-          </div>
+        <div className="lg:col-span-8 surface-card rounded-2xl p-6 sm:p-8 space-y-6">
+          {isTargetAdRewardGame ? (
+            isRtl ? (
+              <article className="space-y-6 text-sm sm:text-base leading-8 text-slate-300">
+                <h2 className="font-display text-xl sm:text-2xl font-bold text-white">
+                  معرفی کامل بازی تبلیغ ببین جایزه ببر
+                </h2>
+                <p>
+                  <strong className="font-semibold text-white">بازی تبلیغ ببین جایزه ببر</strong> محصول
+                  رسمی استودیوی{' '}
+                  <strong className="font-semibold text-[#F2CF66]">توسعه‌دهندگان بازی تک۱</strong>{' '}
+                  (TAK1 Game Studio) است که برای سیستم‌عامل اندروید طراحی شده است. در این{' '}
+                  <strong className="font-semibold text-white">بازی جایزه‌دار ایرانی</strong>، کاربران
+                  می‌توانند در اوقات فراغت با مشاهده ویدئوهای تبلیغاتی جایزه‌دار و تکمیل مربع‌های
+                  امتیاز روزانه، امتیاز جمع‌آوری کنند و در جدول رتبه‌بندی زنده با سایر کاربران رقابت
+                  داشته باشند.
+                </p>
+
+                <div className="space-y-2.5 pt-2 border-t border-white/10">
+                  <h3 className="font-display text-lg font-bold text-white">
+                    چالش ۱۰۰ مربع روزانه و جدول رتبه‌بندی زنده
+                  </h3>
+                  <p>
+                    ساختار اصلی رقابت بر پایه چالش ۱۰۰ مربع امتیاز روزانه با چرخه هوشمند ۲۴ ساعته
+                    بنا شده است. تمامی امتیازهای ثبت‌شده در سرور به‌صورت شفاف در جدول رتبه‌بندی
+                    زنده نمایش داده می‌شوند تا هر کاربر بتواند جایگاه خود و برترین امتیازآوران دوره
+                    را مشاهده کند.
+                  </p>
+                </div>
+
+                <div className="space-y-3 pt-2 border-t border-white/10">
+                  <h3 className="font-display text-lg font-bold text-white">
+                    امکانات نسخه اندروید (نسخه {product.version})
+                  </h3>
+                  <ul className="list-disc ps-5 space-y-2 text-slate-300">
+                    <li>
+                      چالش روزانه ۱۰۰ مربع تبلیغاتی با چرخه ۲۴ ساعته و ثبت امتیاز در جدول رتبه‌بندی
+                      زنده
+                    </li>
+                    <li>
+                      فروشگاه درون‌برنامه‌ای جهت ارتقای حساب به سطوح نقره‌ای (ضریب ۳ برابری امتیاز) و
+                      طلایی (ضریب ۶ برابری امتیاز ویژه)
+                    </li>
+                    <li>
+                      قابلیت بازگشایی آنی مربع‌ها از طریق بسته‌های فروشگاه بدون نیاز به تماشای تبلیغ
+                    </li>
+                    <li>
+                      سیستم اطلاعیه و بنرهای زنده برای دریافت آخرین اخبار مسابقات، اعلام برندگان و
+                      شروع دوره‌های جدید از سرور
+                    </li>
+                    <li>
+                      بخش پشتیبانی و پیام‌ها جهت ارتباط مستقیم با مدیریت، ثبت تیکت و پیگیری وضعیت
+                      جوایز
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="space-y-2.5 pt-2 border-t border-white/10">
+                  <h3 className="font-display text-lg font-bold text-white">
+                    دانلود تبلیغ ببین جایزه ببر برای اندروید از مایکت
+                  </h3>
+                  <p>
+                    برای{' '}
+                    <strong className="font-semibold text-white">
+                      دانلود تبلیغ ببین جایزه ببر
+                    </strong>{' '}
+                    می‌توانید نسخه رسمی اندروید را از طریق لینک مایکت موجود در بالای همین صفحه دریافت
+                    کنید. پرداخت‌های درون‌برنامه‌ای برنامه نیز به‌صورت کامل با درگاه امن مایکت
+                    یکپارچه‌سازی شده است.
+                  </p>
+                </div>
+
+                <div className="space-y-2.5 pt-2 border-t border-white/10">
+                  <h3 className="font-display text-lg font-bold text-white">
+                    امنیت حساب، حریم خصوصی و معرفی توسعه‌دهندگان بازی تک۱
+                  </h3>
+                  <p>
+                    تمامی تراکنش‌ها و امتیازها در این محصول با توکن‌های رمزنگاری‌شده (SHA-256 Nonce)
+                    و ارتباط رمزنگاری‌شده با سرور محافظت می‌شوند و اطلاعات حساب کاربری و شماره تماس
+                    مطابق اصول حریم خصوصی نگهداری می‌گردند. این عنوان توسط تیم{' '}
+                    <a
+                      href="/team"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        navigate('/team');
+                      }}
+                      className="text-[#F2CF66] hover:underline"
+                    >
+                      توسعه‌دهندگان بازی تک۱ (TAK1 Game Studio)
+                    </a>{' '}
+                    توسعه و پشتیبانی می‌شود. همچنین می‌توانید{' '}
+                    <a
+                      href="/products"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        navigate('/products');
+                      }}
+                      className="text-[#F2CF66] hover:underline"
+                    >
+                      سایر بازی‌ها و اپلیکیشن‌های استودیو تک۱
+                    </a>{' '}
+                    را در کاتالوگ محصولات مشاهده کنید.
+                  </p>
+                </div>
+              </article>
+            ) : (
+              <article className="space-y-6 text-sm sm:text-base leading-8 text-slate-300">
+                <h2 className="font-display text-xl sm:text-2xl font-bold text-white">
+                  About Tabligh Bebin Jayeze Bebar
+                </h2>
+                <p>
+                  <strong className="font-semibold text-white">Tabligh Bebin Jayeze Bebar</strong> is
+                  an official Android release developed by{' '}
+                  <strong className="font-semibold text-[#F2CF66]">TAK1 Game Studio</strong>. Players
+                  earn points by watching rewarded ad videos and completing daily challenge squares
+                  while competing on a transparent live leaderboard.
+                </p>
+                <div className="space-y-2.5 pt-2 border-t border-white/10">
+                  <h3 className="font-display text-lg font-bold text-white">
+                    Core Features (Version {product.version})
+                  </h3>
+                  <ul className="list-disc ps-5 space-y-2 text-slate-300">
+                    <li>Daily 100-square rewarded ad challenge on an automated 24-hour cycle</li>
+                    <li>Live leaderboard tracking top scorers throughout each competition cycle</li>
+                    <li>In-app store upgrades (Silver 3x and Gold 6x score multipliers) and quick-unlock packs</li>
+                    <li>Direct in-app support ticket tracking, live winner announcements, and SHA-256 protected scoring</li>
+                  </ul>
+                </div>
+                <div className="space-y-2.5 pt-2 border-t border-white/10">
+                  <h3 className="font-display text-lg font-bold text-white">
+                    Official Android Download & Developer Info
+                  </h3>
+                  <p>
+                    Install the verified Android release via the Myket link on this page. Developed
+                    and maintained by{' '}
+                    <a
+                      href="/team"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        navigate('/team');
+                      }}
+                      className="text-[#F2CF66] hover:underline"
+                    >
+                      TAK1 Game Studio
+                    </a>
+                    .
+                  </p>
+                </div>
+              </article>
+            )
+          ) : (
+            <>
+              <h2 className="font-display text-xl font-bold text-white">
+                {t.productDetail.overviewTitle}
+              </h2>
+              <div className="text-sm sm:text-base leading-8 text-slate-300 whitespace-pre-line">
+                {fullDesc || shortDesc}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="lg:col-span-4 surface-card rounded-2xl p-6 space-y-4 h-fit">
           <h2 className="text-base font-bold text-white">{t.productDetail.needHelp}</h2>
-          <button
-            type="button"
-            onClick={() => navigate('/support')}
-            className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-[#D4AF37]/40 bg-[#D4AF37]/10 text-[#F2CF66] text-sm font-medium hover:bg-[#D4AF37]/20 transition cursor-pointer"
+          <a
+            href="/support"
+            onClick={(e) => {
+              e.preventDefault();
+              navigate('/support');
+            }}
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-[#D4AF37]/40 bg-[#D4AF37]/10 text-[#F2CF66] text-sm font-medium hover:bg-[#D4AF37]/20 transition"
           >
             <LifeBuoy className="h-4 w-4" />
             <span>{t.productDetail.openTicket}</span>
-          </button>
+          </a>
         </div>
       </section>
     </div>

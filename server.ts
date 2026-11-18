@@ -19,6 +19,13 @@ import {
   type AuthenticatedAdminRequest,
 } from './server/auth.ts';
 import type { AdminRole } from './src/types/studio.ts';
+import {
+  TAK1_AD_REWARD_CANONICAL,
+  TAK1_AD_REWARD_ICON,
+  TAK1_AD_REWARD_SEO,
+  TAK1_AD_REWARD_SLUG,
+  buildTak1AdRewardJsonLd,
+} from './src/seo/tak1AdRewardSeo.ts';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -1169,6 +1176,57 @@ async function startServer() {
     sendError(res, err);
   });
 
+  const injectTak1AdRewardSeoHead = (rawHtml: string): string => {
+    const title = escapeXml(TAK1_AD_REWARD_SEO.fa.title);
+    const description = escapeXml(TAK1_AD_REWARD_SEO.fa.description);
+    const canonical = escapeXml(TAK1_AD_REWARD_CANONICAL);
+    const image = escapeXml(TAK1_AD_REWARD_ICON);
+    const jsonLd = JSON.stringify(buildTak1AdRewardJsonLd({ isFa: true })).replace(/<\//g, '<\\/');
+
+    return rawHtml
+      .replace(/<title>[\s\S]*?<\/title>/i, () => `<title>${title}</title>`)
+      .replace(
+        /<meta\s+name="description"[\s\S]*?\/>/i,
+        () => `<meta name="description" content="${description}" />`,
+      )
+      .replace(
+        /<meta\s+property="og:title"[\s\S]*?\/>/i,
+        () => `<meta property="og:title" content="${title}" />`,
+      )
+      .replace(
+        /<meta\s+property="og:description"[\s\S]*?\/>/i,
+        () => `<meta property="og:description" content="${description}" />`,
+      )
+      .replace(
+        /<meta\s+property="og:url"[\s\S]*?\/>/i,
+        () => `<meta property="og:url" content="${canonical}" />`,
+      )
+      .replace(
+        /<meta\s+property="og:image"[\s\S]*?\/>/i,
+        () => `<meta property="og:image" content="${image}" />`,
+      )
+      .replace(
+        /<meta\s+name="twitter:title"[\s\S]*?\/>/i,
+        () => `<meta name="twitter:title" content="${title}" />`,
+      )
+      .replace(
+        /<meta\s+name="twitter:description"[\s\S]*?\/>/i,
+        () => `<meta name="twitter:description" content="${description}" />`,
+      )
+      .replace(
+        /<meta\s+name="twitter:image"[\s\S]*?\/>/i,
+        () => `<meta name="twitter:image" content="${image}" />`,
+      )
+      .replace(
+        /<link\s+rel="canonical"[\s\S]*?\/>/i,
+        () => `<link rel="canonical" href="${canonical}" />`,
+      )
+      .replace(
+        /<script\s+id="tak1-structured-data"\s+type="application\/ld\+json">[\s\S]*?<\/script>/i,
+        () => `<script id="tak1-structured-data" type="application/ld+json">${jsonLd}</script>`,
+      );
+  };
+
   // ---- Vite Dev Middleware or Production Dist ----
   const isProd = process.env.NODE_ENV === 'production';
   if (!isProd) {
@@ -1176,13 +1234,37 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: 'spa',
     });
+    app.get(`/products/${TAK1_AD_REWARD_SLUG}`, async (req, res, next) => {
+      try {
+        const indexPath = path.resolve(process.cwd(), 'index.html');
+        const template = fs.readFileSync(indexPath, 'utf-8');
+        const transformed = await vite.transformIndexHtml(req.originalUrl, template);
+        const seoHtml = injectTak1AdRewardSeoHead(transformed);
+        res.status(200).setHeader('Content-Type', 'text/html; charset=utf-8').end(seoHtml);
+      } catch {
+        next();
+      }
+    });
     app.use(vite.middlewares);
   } else {
     const distDir = path.resolve(process.cwd(), 'dist');
     app.use(express.static(distDir));
-    app.get('*', (_req, res) => {
+    app.get('*', (req, res) => {
       const indexHtml = path.join(distDir, 'index.html');
       if (fs.existsSync(indexHtml)) {
+        const normalizedPath = req.path === '/' ? '/' : req.path.replace(/\/+$/, '');
+        if (normalizedPath === `/products/${TAK1_AD_REWARD_SLUG}`) {
+          try {
+            const rawHtml = fs.readFileSync(indexHtml, 'utf-8');
+            res
+              .status(200)
+              .setHeader('Content-Type', 'text/html; charset=utf-8')
+              .send(injectTak1AdRewardSeoHead(rawHtml));
+            return;
+          } catch {
+            // Fall through to standard file send
+          }
+        }
         res.sendFile(indexHtml);
       } else {
         res.status(404).send('Build output not found. Run npm run build.');
