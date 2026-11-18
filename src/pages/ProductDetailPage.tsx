@@ -202,7 +202,7 @@ export function ProductDetailPage({ slug }: { slug: string }) {
         </div>
 
         <div className="lg:col-span-4 surface-card rounded-2xl p-6 space-y-4 h-fit">
-          <h3 className="text-base font-bold text-white">{t.productDetail.needHelp}</h3>
+          <h2 className="text-base font-bold text-white">{t.productDetail.needHelp}</h2>
           <button
             type="button"
             onClick={() => navigate('/support')}

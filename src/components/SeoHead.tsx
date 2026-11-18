@@ -41,6 +41,13 @@ function setCanonicalLink(href: string): void {
   link.setAttribute('href', href);
 }
 
+function removeCanonicalLink(): void {
+  const link = document.querySelector('link[rel="canonical"]');
+  if (link) {
+    link.remove();
+  }
+}
+
 function setStructuredData(data: Record<string, unknown>): void {
   const id = 'tak1-structured-data';
   let script = document.getElementById(id) as HTMLScriptElement | null;
@@ -55,44 +62,61 @@ function setStructuredData(data: Record<string, unknown>): void {
 
 const OFFICIAL_BRAND_FA = 'توسعه‌دهندگان بازی تک۱';
 const OFFICIAL_BRAND_EN = 'TAK1 Game Studio';
-const LEGACY_FA_BRAND = 'استودیوی بازی‌سازی TAK1';
+const HOME_TITLE_FA = 'توسعه‌دهندگان بازی تک۱ | استودیوی بازی TAK1';
+const HOME_DESC_FA =
+  'تیم توسعه‌دهندگان بازی تک۱ (TAK1)، سازنده بازی‌های اندرویدی، اپلیکیشن و نرم‌افزارهای کاربردی. بازی‌ها و محصولات ما را ببینید و با تیم توسعه‌دهنده آشنا شوید.';
 
 export function SeoHead() {
   const { lang, path, products, siteSettings } = useStudio();
   const isFa = lang === 'fa';
   const normalized = path === '/' ? '/' : path.replace(/\/+$/, '');
   const baseUrl = 'https://kalametgame.ir';
-  const canonicalUrl = `${baseUrl}${normalized === '/' ? '/' : normalized}`;
-  const customFa = siteSettings?.studioNameFa?.trim();
-  const studioNameFa = customFa && customFa !== LEGACY_FA_BRAND ? customFa : OFFICIAL_BRAND_FA;
-  const studioNameEn = siteSettings?.studioNameEn?.trim() || OFFICIAL_BRAND_EN;
-  const studioName = isFa ? studioNameFa : studioNameEn;
+  const studioName = isFa ? OFFICIAL_BRAND_FA : OFFICIAL_BRAND_EN;
+
+  let canonicalUrl = `${baseUrl}${normalized === '/' ? '/' : normalized}`;
+  if (normalized.startsWith('/products/')) {
+    const rawSlug = normalized.slice('/products/'.length);
+    try {
+      canonicalUrl = `${baseUrl}/products/${encodeURIComponent(decodeURIComponent(rawSlug))}`;
+    } catch {
+      canonicalUrl = `${baseUrl}/products/${encodeURIComponent(rawSlug)}`;
+    }
+  }
 
   useEffect(() => {
     let title = isFa
-      ? `${studioNameFa} | طراحی و توسعه بازی`
-      : `${studioNameEn} | Game Design & Development`;
+      ? HOME_TITLE_FA
+      : `${OFFICIAL_BRAND_EN} | Android Games & Applications`;
     let description = isFa
-      ? `وب‌سایت رسمی ${studioNameFa} (${studioNameEn}) در دامنه kalametgame.ir — طراحی و توسعه بازی، معرفی تیم، دانلود بازی‌ها و اپلیکیشن‌ها، اخبار و پشتیبانی مستقیم.`
-      : `Official website of ${studioNameEn} (${studioNameFa}) on kalametgame.ir — Android games, modern apps, studio news, team profiles, and player support.`;
+      ? HOME_DESC_FA
+      : `Official website of ${OFFICIAL_BRAND_EN} (${OFFICIAL_BRAND_FA}) on kalametgame.ir — Android games, mobile applications, studio news, team profiles, and player support.`;
     let robots = 'index, follow';
+    let shouldSetCanonical = true;
     let ogImage = `${baseUrl}/assets/aistudio/image_3e0bd734.png`;
 
     const baseGraphNodes: Record<string, unknown>[] = [
       {
         '@type': 'Organization',
-        name: studioNameFa,
-        alternateName: studioNameEn,
+        '@id': `${baseUrl}/#organization`,
+        name: OFFICIAL_BRAND_FA,
+        alternateName: OFFICIAL_BRAND_EN,
         url: baseUrl,
         logo: `${baseUrl}/assets/aistudio/image_3e0bd734.png`,
+        description:
+          'تیم توسعه‌دهندگان بازی تک۱ (TAK1)، سازنده بازی‌های اندرویدی، اپلیکیشن و نرم‌افزارهای کاربردی.',
         email: siteSettings?.contactEmail || 'contact@kalametgame.ir',
       },
       {
         '@type': 'WebSite',
-        name: studioNameFa,
-        alternateName: studioNameEn,
+        '@id': `${baseUrl}/#website`,
+        name: OFFICIAL_BRAND_FA,
+        alternateName: OFFICIAL_BRAND_EN,
         url: `${baseUrl}/`,
         inLanguage: isFa ? 'fa-IR' : 'en-US',
+        description: HOME_DESC_FA,
+        publisher: {
+          '@id': `${baseUrl}/#organization`,
+        },
       },
     ];
 
@@ -103,13 +127,19 @@ export function SeoHead() {
 
     if (normalized === '/products') {
       title = isFa
-        ? `بازی‌ها و اپلیکیشن‌ها | ${studioNameFa}`
-        : `Games & Applications | ${studioNameEn}`;
+        ? `محصولات و بازی‌های اندرویدی | ${OFFICIAL_BRAND_FA}`
+        : `Games & Applications | ${OFFICIAL_BRAND_EN}`;
       description = isFa
-        ? `فهرست رسمی بازی‌های اندرویدی، اپلیکیشن‌ها و ابزارهای نرم‌افزاری ${studioNameFa} همراه با لینک‌های دانلود معتبر.`
-        : `Official catalog of Android games, mobile applications, and tools developed by ${studioNameEn}.`;
+        ? 'مشاهده و دانلود بازی‌های اندرویدی، اپلیکیشن‌ها و ابزارهای نرم‌افزاری ساخته‌شده توسط تیم توسعه‌دهندگان بازی تک۱ (TAK1) با لینک‌های رسمی مایکت، کافه‌بازار و گوگل‌پلی.'
+        : `Official catalog of Android games, mobile applications, and tools developed by ${OFFICIAL_BRAND_EN}.`;
     } else if (normalized.startsWith('/products/')) {
-      const slug = decodeURIComponent(normalized.slice('/products/'.length));
+      const rawSlug = normalized.slice('/products/'.length);
+      let slug = rawSlug;
+      try {
+        slug = decodeURIComponent(rawSlug);
+      } catch {
+        slug = rawSlug;
+      }
       const product = products.find((p) => p.slug === slug);
       if (product) {
         const pTitle = isFa ? product.titleFa : product.titleEn;
@@ -117,7 +147,11 @@ export function SeoHead() {
           ? product.shortDescFa || product.fullDescFa
           : product.shortDescEn || product.fullDescEn;
         title = `${pTitle} | ${studioName}`;
-        if (pDesc) description = pDesc.slice(0, 155);
+        description = pDesc
+          ? pDesc.slice(0, 155)
+          : isFa
+            ? `معرفی، تصاویر و لینک‌های دانلود رسمی ${pTitle} از تیم ${OFFICIAL_BRAND_FA} (TAK1).`
+            : `Overview, screenshots, and official download links for ${pTitle} by ${OFFICIAL_BRAND_EN}.`;
         if (product.iconUrl) {
           ogImage = product.iconUrl.startsWith('http')
             ? product.iconUrl
@@ -137,52 +171,59 @@ export function SeoHead() {
               description,
               url: canonicalUrl,
               author: {
-                '@type': 'Organization',
-                name: studioNameFa,
-                alternateName: studioNameEn,
-                url: baseUrl,
+                '@id': `${baseUrl}/#organization`,
               },
             },
           ],
         };
       } else {
-        title = isFa ? `مشخصات محصول | ${studioNameFa}` : `Product Details | ${studioNameEn}`;
+        title = isFa ? `مشخصات محصول | ${OFFICIAL_BRAND_FA}` : `Product Details | ${OFFICIAL_BRAND_EN}`;
+        description = isFa
+          ? `اطلاعات فنی، تصاویر و لینک دانلود رسمی محصول در وب‌سایت ${OFFICIAL_BRAND_FA} (TAK1).`
+          : `Technical specifications, screenshots, and official download links on ${OFFICIAL_BRAND_EN}.`;
       }
     } else if (normalized === '/team') {
-      title = isFa ? `تیم توسعه | ${studioNameFa}` : `Our Team | ${studioNameEn}`;
+      title = isFa ? `معرفی تیم توسعه‌دهنده | ${OFFICIAL_BRAND_FA}` : `Our Team | ${OFFICIAL_BRAND_EN}`;
       description = isFa
-        ? `آشنایی با تیم مهندسی نرم‌افزار، طراحی بازی و حوزه‌های تخصصی ${studioNameFa} (${studioNameEn}).`
-        : `Meet the programmers, game designers, and creators behind ${studioNameEn}.`;
+        ? 'آشنایی با اعضای تیم توسعه‌دهندگان بازی تک۱ (TAK1)، برنامه‌نویسان، طراحان بازی و حوزه‌های تخصصی مهندسی نرم‌افزار در استودیو.'
+        : `Meet the programmers, game designers, and creators behind ${OFFICIAL_BRAND_EN}.`;
     } else if (normalized === '/news') {
-      title = isFa ? `اخبار و اطلاعیه‌ها | ${studioNameFa}` : `News & Dispatches | ${studioNameEn}`;
+      title = isFa ? `اخبار و اطلاعیه‌ها | ${OFFICIAL_BRAND_FA}` : `News & Dispatches | ${OFFICIAL_BRAND_EN}`;
       description = isFa
-        ? `آخرین اخبار، یادداشت‌های توسعه، انتشار نسخه‌های جدید و اطلاعیه‌های ${studioNameFa}.`
-        : `Latest development updates, release notes, and official announcements from ${studioNameEn}.`;
+        ? 'جدیدترین اخبار، گزارش‌های توسعه، معرفی بازی‌های جدید و اطلاعیه‌های انتشار به‌روزرسانی‌های تیم توسعه‌دهندگان بازی تک۱ (TAK1).'
+        : `Latest development updates, release notes, and official announcements from ${OFFICIAL_BRAND_EN}.`;
     } else if (normalized === '/support') {
       title = isFa
-        ? `پشتیبانی و پیگیری تیکت | ${studioNameFa}`
-        : `Player Support | ${studioNameEn}`;
+        ? `پشتیبانی کاربران و پیگیری تیکت | ${OFFICIAL_BRAND_FA}`
+        : `Player Support | ${OFFICIAL_BRAND_EN}`;
       description = isFa
-        ? `ثبت درخواست پشتیبانی فنی و پیگیری وضعیت تیکت برای بازی‌ها و اپلیکیشن‌های ${studioNameFa}.`
-        : `Submit a technical support request or track an existing support ticket for ${studioNameEn} titles.`;
+        ? 'ارسال درخواست پشتیبانی فنی، گزارش خطا و پیگیری وضعیت تیکت و پاسخ کارشناسان برای بازی‌ها و اپلیکیشن‌های تک۱ (TAK1).'
+        : `Submit a technical support request or track an existing support ticket for ${OFFICIAL_BRAND_EN} titles.`;
     } else if (normalized === '/feedback') {
-      title = isFa ? `پیشنهادها و ایده‌ها | ${studioNameFa}` : `Feedback & Ideas | ${studioNameEn}`;
+      title = isFa
+        ? `پیشنهادها و ایده‌های کاربران | ${OFFICIAL_BRAND_FA}`
+        : `Feedback & Ideas | ${OFFICIAL_BRAND_EN}`;
       description = isFa
-        ? `ارسال ایده‌های بازی، پیشنهادهای بهبود و نظرات کاربران برای ${studioNameFa}.`
-        : `Share feature requests, new game ideas, and feedback directly with ${studioNameEn}.`;
+        ? 'ثبت پیشنهادهای جدید، ایده‌های ساخت بازی و نظرات کاربران برای بهبود بازی‌ها و نرم‌افزارهای تیم توسعه‌دهندگان بازی تک۱ (TAK1).'
+        : `Share feature requests, new game ideas, and feedback directly with ${OFFICIAL_BRAND_EN}.`;
     } else if (normalized === '/contact') {
-      title = isFa ? `تماس با ما | ${studioNameFa}` : `Contact Us | ${studioNameEn}`;
+      title = isFa ? `تماس با ما | ${OFFICIAL_BRAND_FA}` : `Contact Us | ${OFFICIAL_BRAND_EN}`;
       description = isFa
-        ? `راه‌های ارتباط مستقیم با ${studioNameFa} (${studioNameEn}) برای همکاری، نشر و پرسش‌های تجاری.`
-        : `Get in touch with ${studioNameEn} for partnerships, publishing, and general inquiries.`;
+        ? 'راه‌های ارتباط مستقیم با تیم توسعه‌دهندگان بازی تک۱ (TAK1) جهت همکاری، نشر بازی، مسائل تجاری و پرسش‌های عمومی.'
+        : `Get in touch with ${OFFICIAL_BRAND_EN} for partnerships, publishing, and general inquiries.`;
     } else if (normalized === '/admin') {
-      title = isFa ? `داشبورد مدیریت | ${studioNameFa}` : `Studio Workspace | ${studioNameEn}`;
+      title = isFa ? `داشبورد مدیریت | ${OFFICIAL_BRAND_FA}` : `Studio Workspace | ${OFFICIAL_BRAND_EN}`;
       robots = 'noindex, nofollow';
+      shouldSetCanonical = false;
     } else if (!isKnownStudioRoute(normalized)) {
       title = isFa
-        ? `صفحه یافت نشد (۴۰۴) | ${studioNameFa}`
-        : `Page Not Found (404) | ${studioNameEn}`;
+        ? `صفحه یافت نشد (۴۰۴) | ${OFFICIAL_BRAND_FA}`
+        : `Page Not Found (404) | ${OFFICIAL_BRAND_EN}`;
+      description = isFa
+        ? `صفحه مورد نظر در وب‌سایت ${OFFICIAL_BRAND_FA} یافت نشد.`
+        : `The requested page was not found on ${OFFICIAL_BRAND_EN}.`;
       robots = 'noindex, nofollow';
+      shouldSetCanonical = false;
     }
 
     document.title = title;
@@ -199,9 +240,15 @@ export function SeoHead() {
     setMetaTag('name', 'twitter:title', title);
     setMetaTag('name', 'twitter:description', description);
     setMetaTag('name', 'twitter:image', ogImage);
-    setCanonicalLink(canonicalUrl);
+
+    if (shouldSetCanonical) {
+      setCanonicalLink(canonicalUrl);
+    } else {
+      removeCanonicalLink();
+    }
+
     setStructuredData(jsonLd);
-  }, [isFa, normalized, canonicalUrl, products, siteSettings, studioName, studioNameFa, studioNameEn]);
+  }, [isFa, normalized, canonicalUrl, products, siteSettings, studioName]);
 
   return null;
 }

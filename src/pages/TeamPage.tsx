@@ -8,7 +8,10 @@ export function TeamPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 space-y-16">
-
+      <header className="space-y-3">
+        <h1 className="font-display text-3xl sm:text-4xl font-bold text-white">{t.team.title}</h1>
+        <p className="max-w-2xl text-base text-slate-400">{t.team.subtitle}</p>
+      </header>
 
       {/* Core Disciplines */}
       <section className="space-y-6">
